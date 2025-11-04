@@ -38,6 +38,9 @@ COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
 # Copy scripts directory
 COPY --chown=nestjs:nodejs scripts ./scripts
 
+# Copy public directory for Swagger custom scripts
+COPY --chown=nestjs:nodejs public ./public
+
 # Use non-root user
 USER nestjs
 

@@ -16,6 +16,7 @@ import { AcquiringBankModule } from './acquiring-bank/acquiring-bank.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { AuditModule } from './audit/audit.module';
 import { AdminModule } from './admin/admin.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { AdminModule } from './admin/admin.module';
     WebhooksModule,
     AuditModule,
     AdminModule,
+    HealthModule,
   ],
   controllers: [],
   providers: [

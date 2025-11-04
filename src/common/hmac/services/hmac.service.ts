@@ -41,10 +41,57 @@ export class HmacService {
 
   /**
    * Create payload string from request body and timestamp
+   * Uses deterministic JSON stringification to ensure consistent signatures
    */
   createPayload(body: any, timestamp: string): string {
-    const bodyString = typeof body === 'string' ? body : JSON.stringify(body);
+    let bodyString = '';
+    
+    if (body === null || body === undefined) {
+      bodyString = '';
+    } else if (typeof body === 'string') {
+      // If it's already a string, try to parse and re-stringify to normalize
+      try {
+        const parsed = JSON.parse(body);
+        const normalized = this.stringifyDeterministic(parsed);
+        bodyString = JSON.stringify(normalized);
+      } catch {
+        // If not valid JSON, use as-is
+        bodyString = body;
+      }
+    } else {
+      // Use deterministic stringification
+      const normalized = this.stringifyDeterministic(body);
+      bodyString = JSON.stringify(normalized);
+    }
+    
     return `${timestamp}.${bodyString}`;
+  }
+
+  /**
+   * Deterministic JSON stringification that produces consistent output
+   * regardless of key order. Recursively sorts all object keys.
+   */
+  private stringifyDeterministic(obj: any): any {
+    if (obj === null || obj === undefined) {
+      return null;
+    }
+    
+    if (typeof obj !== 'object') {
+      return obj;
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.stringifyDeterministic(item));
+    }
+    
+    // Sort keys and recursively process nested objects
+    const sortedKeys = Object.keys(obj).sort();
+    const sortedObj: Record<string, any> = {};
+    for (const key of sortedKeys) {
+      sortedObj[key] = this.stringifyDeterministic(obj[key]);
+    }
+    
+    return sortedObj;
   }
 
   /**

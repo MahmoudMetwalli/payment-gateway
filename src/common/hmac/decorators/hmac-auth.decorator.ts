@@ -1,5 +1,5 @@
 import { UseGuards, applyDecorators } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
+import { ApiHeader, ApiSecurity } from '@nestjs/swagger';
 import { HmacGuard } from '../guards/hmac.guard';
 
 /**
@@ -9,22 +9,26 @@ import { HmacGuard } from '../guards/hmac.guard';
 export function HmacAuth() {
   return applyDecorators(
     UseGuards(HmacGuard),
+    // Mark these routes as requiring HMAC-related security schemes
+    ApiSecurity('HMAC-API-Key'),
+    ApiSecurity('HMAC-Signature'),
+    ApiSecurity('HMAC-Timestamp'),
     ApiHeader({
       name: 'X-API-Key',
-      description: 'Merchant API Key',
-      required: true,
+      description: 'Merchant API Key (auto-filled by HMAC Helper)',
+      required: false,
       schema: { type: 'string' },
     }),
     ApiHeader({
       name: 'X-Signature',
-      description: 'HMAC-SHA256 signature of timestamp.body',
-      required: true,
+      description: 'HMAC-SHA256 signature of timestamp.body (auto-generated)',
+      required: false,
       schema: { type: 'string' },
     }),
     ApiHeader({
       name: 'X-Timestamp',
-      description: 'Unix timestamp in seconds',
-      required: true,
+      description: 'Unix timestamp in seconds (auto-generated)',
+      required: false,
       schema: { type: 'string' },
     }),
   );

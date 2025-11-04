@@ -6,6 +6,7 @@ services:
     image: mongo:7
     container_name: payment-gateway-mongodb
     restart: unless-stopped
+    # Standalone MongoDB (no replica set). We will disable retryable writes in the URI.
     ports:
       - '27017:27017'
     environment:
@@ -52,7 +53,7 @@ services:
     container_name: payment-gateway-seed
     environment:
       # MongoDB
-      MONGODB_URI: mongodb://admin:password123@mongodb:27017/payment-gateway?authSource=admin
+      MONGODB_URI: mongodb://admin:password123@mongodb:27017/payment-gateway?authSource=admin&retryWrites=false
       
       # Default Admin (for initial seeding)
       DEFAULT_ADMIN_USERNAME: admin
@@ -83,7 +84,7 @@ services:
       PORT: 3000
       
       # MongoDB
-      MONGODB_URI: mongodb://admin:password123@mongodb:27017/payment-gateway?authSource=admin
+      MONGODB_URI: mongodb://admin:password123@mongodb:27017/payment-gateway?authSource=admin&retryWrites=false
       
       # JWT
       JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
@@ -121,6 +122,7 @@ services:
         condition: service_healthy
       seed:
         condition: service_completed_successfully
+
     networks:
       - payment-gateway-network
     healthcheck:
@@ -141,4 +143,6 @@ volumes:
 networks:
   payment-gateway-network:
     driver: bridge
+
+secrets: {}
 

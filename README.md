@@ -342,9 +342,29 @@ curl -X GET http://localhost:3000/merchants/profile \
 
 ### HMAC Authentication
 
-Used for transaction endpoints to ensure request integrity:
+Used for transaction endpoints to ensure request integrity.
 
-#### Generating HMAC Signature
+#### Testing HMAC in Swagger UI
+
+**Easy Testing with HMAC Helper:**
+
+Swagger UI includes a built-in HMAC Helper that automatically generates signatures for you:
+
+1. Open Swagger UI at http://localhost:3000/api
+2. Look for the **"🔐 HMAC Helper"** panel in the top-right corner
+3. Enter your **API Key** and **API Secret**
+4. Click **"Save Credentials"**
+5. Try any transaction endpoint - HMAC headers are automatically generated!
+
+The helper:
+- ✅ Automatically generates timestamps
+- ✅ Calculates HMAC-SHA256 signatures
+- ✅ Injects headers before sending requests
+- ✅ Saves credentials in browser localStorage (for convenience)
+
+#### Generating HMAC Signature (Manual)
+
+For programmatic access, generate HMAC signatures manually:
 
 ```javascript
 const crypto = require('crypto');

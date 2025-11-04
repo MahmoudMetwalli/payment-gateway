@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, ClientSession } from 'mongoose';
+import { Model } from 'mongoose';
 import { Outbox, OutboxStatus } from '../schemas/outbox.schema';
 import { CreateOutboxDto } from '../dto/create-outbox.dto';
 
@@ -12,12 +12,9 @@ export class OutboxService {
   ) {}
 
   /**
-   * Create an outbox entry within a transaction session
+   * Create an outbox entry
    */
-  async createOutboxEntry(
-    dto: CreateOutboxDto,
-    session?: ClientSession,
-  ): Promise<Outbox> {
+  async createOutboxEntry(dto: CreateOutboxDto): Promise<Outbox> {
     const outboxEntry = new this.outboxModel({
       aggregateId: dto.aggregateId,
       eventType: dto.eventType,
@@ -26,10 +23,6 @@ export class OutboxService {
       retryCount: 0,
     });
 
-    if (session) {
-      const saved = await outboxEntry.save({ session });
-      return saved;
-    }
     return outboxEntry.save();
   }
 
