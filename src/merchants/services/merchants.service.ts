@@ -16,6 +16,8 @@ import {
   UpdateBalanceDto,
   PasswordResponseDto,
 } from '../dto';
+import { BankingInfoDto, BankingInfoResponseDto } from '../dto/banking-info.dto';
+import { EncryptionService } from 'src/tokenization/services/encryption.service';
 
 @Injectable()
 export class MerchantsService
@@ -24,6 +26,7 @@ export class MerchantsService
   constructor(
     @InjectModel(Merchant.name)
     private merchantModel: Model<Merchant>,
+    private encryptionService: EncryptionService,
   ) {}
 
   async create(
@@ -54,7 +57,11 @@ export class MerchantsService
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
     }
-    return { apiKey: merchant.apiKey, apiSecret: merchant.apiSecret };
+    return {
+      id: merchant._id.toString(),
+      apiKey: merchant.apiKey,
+      apiSecret: merchant.apiSecret,
+    };
   }
 
   async regenerateApiCredentials(id: string): Promise<CredsResponseDto> {
@@ -79,7 +86,11 @@ export class MerchantsService
       );
     }
 
-    return { apiKey: updated.apiKey, apiSecret: updated.apiSecret };
+    return {
+      id: updated._id.toString(),
+      apiKey: updated.apiKey,
+      apiSecret: updated.apiSecret,
+    };
   }
 
   async update(
@@ -152,6 +163,66 @@ export class MerchantsService
     throw new ConflictException(
       'Failed to update balance after multiple retries',
     );
+  }
+
+  /**
+   * Add or update banking information
+   */
+  async addBankingInfo(
+    merchantId: string,
+    bankingDto: BankingInfoDto,
+  ): Promise<void> {
+    const merchant = await this.merchantModel.findById(merchantId);
+    if (!merchant) {
+      throw new NotFoundException('Merchant not found');
+    }
+
+    // Encrypt sensitive banking info
+    const encryptedAccountNumber = this.encryptionService.encrypt(
+      bankingDto.bankAccountNumber,
+    );
+    const encryptedRoutingNumber = this.encryptionService.encrypt(
+      bankingDto.bankRoutingNumber,
+    );
+
+    await this.merchantModel.findByIdAndUpdate(merchantId, {
+      encryptedBankAccountNumber: encryptedAccountNumber,
+      encryptedBankRoutingNumber: encryptedRoutingNumber,
+      bankAccountHolderName: bankingDto.bankAccountHolderName,
+      bankName: bankingDto.bankName,
+    });
+  }
+
+  /**
+   * Get banking information (decrypted but masked)
+   */
+  async getBankingInfo(merchantId: string): Promise<BankingInfoResponseDto> {
+    const merchant = await this.merchantModel.findById(merchantId);
+    if (!merchant) {
+      throw new NotFoundException('Merchant not found');
+    }
+
+    if (!merchant.encryptedBankAccountNumber) {
+      throw new NotFoundException('Banking information not configured');
+    }
+
+    // Decrypt for processing (but we'll mask it for display)
+    const decryptedAccountNumber = this.encryptionService.decrypt(
+      merchant.encryptedBankAccountNumber,
+    );
+    const decryptedRoutingNumber = this.encryptionService.decrypt(
+      merchant.encryptedBankRoutingNumber,
+    );
+
+    return {
+      bankAccountNumber: this.encryptionService.maskString(
+        decryptedAccountNumber,
+        4,
+      ),
+      bankRoutingNumber: decryptedRoutingNumber,
+      bankAccountHolderName: merchant.bankAccountHolderName,
+      bankName: merchant.bankName,
+    };
   }
 
   private toResponseDto(merchant: Merchant): MerchantResponseDto {

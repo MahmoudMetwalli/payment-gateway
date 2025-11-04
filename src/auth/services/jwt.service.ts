@@ -6,6 +6,7 @@ export interface JwtPayload {
   sub: string; // User ID
   userName: string;
   type: 'merchant' | 'admin';
+  role?: string; // Admin role
   iat?: number; // Issued at
   exp?: number; // Expiration
 }
@@ -24,18 +25,18 @@ export class JwtService {
 
   // Generate access token (short-lived)
   generateAccessToken(payload: Omit<JwtPayload, 'iat' | 'exp'>): string {
-    return this.nestJwtService.sign(payload, {
-      secret: this.configService.get<string>('JWT_SECRET'),
-      expiresIn: this.configService.get<string>('JWT_ACCESS_EXPIRATION', '15m'),
-    });
+    const secret = this.configService.get<string>('JWT_SECRET') || 'default-secret';
+    const expiresIn = this.configService.get<string>('JWT_ACCESS_EXPIRATION') || '15m';
+    // Type assertion to work around strict typing in @nestjs/jwt
+    return (this.nestJwtService as any).sign(payload, { secret, expiresIn });
   }
 
   // Generate refresh token (long-lived)
   generateRefreshToken(payload: Omit<JwtPayload, 'iat' | 'exp'>): string {
-    return this.nestJwtService.sign(payload, {
-      secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-      expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRATION', '7d'),
-    });
+    const secret = this.configService.get<string>('JWT_REFRESH_SECRET') || 'default-refresh-secret';
+    const expiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRATION') || '7d';
+    // Type assertion to work around strict typing in @nestjs/jwt
+    return (this.nestJwtService as any).sign(payload, { secret, expiresIn });
   }
 
   // Generate both tokens

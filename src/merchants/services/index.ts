@@ -1,2 +1,2 @@
 export * from './merchants.service';
-export * from './merchant-security.service';
+export * from './withdrawal.service';

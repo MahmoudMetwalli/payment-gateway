@@ -4,3 +4,5 @@ export * from './merchant-response.dto';
 export * from './creds-response.dto';
 export * from './update-balance.dto';
 export * from './password-response.dto';
+export * from './banking-info.dto';
+export * from './create-withdrawal.dto';

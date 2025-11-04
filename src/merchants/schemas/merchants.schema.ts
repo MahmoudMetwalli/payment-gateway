@@ -24,6 +24,19 @@ export class Merchant {
 
   @Prop({ type: [String], default: [] })
   webhook: string[];
+
+  // Banking information (encrypted)
+  @Prop({ type: String })
+  encryptedBankAccountNumber: string;
+
+  @Prop({ type: String })
+  encryptedBankRoutingNumber: string;
+
+  @Prop({ type: String })
+  bankAccountHolderName: string;
+
+  @Prop({ type: String })
+  bankName: string;
 }
 
 export const MerchantSchema = SchemaFactory.createForClass(Merchant);
