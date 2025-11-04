@@ -2,11 +2,14 @@ import {
   IsString,
   IsOptional,
   MinLength,
-  IsNumber,
-  Min,
+  IsArray,
+  IsUrl,
 } from 'class-validator';
 
 export class UpdateMerchantDto {
+  @IsString()
+  id: string;
+
   @IsString()
   @IsOptional()
   userName?: string;
@@ -16,8 +19,8 @@ export class UpdateMerchantDto {
   @MinLength(8)
   password?: string;
 
-  @IsNumber()
+  @IsArray()
   @IsOptional()
-  @Min(0)
-  balance?: number;
+  @IsUrl({ protocols: ['https'], require_protocol: true }, { each: true })
+  webhook?: string[];
 }

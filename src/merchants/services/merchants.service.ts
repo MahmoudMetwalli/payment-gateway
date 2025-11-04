@@ -1,97 +1,70 @@
+import { randomBytes } from 'crypto';
 import {
   Injectable,
   ConflictException,
   NotFoundException,
-  Inject,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Merchant } from '../schemas';
-import {
-  IMerchantsService,
-  IMerchantBalanceManager,
-  MERCHANTS_SECURITY_SERVICE,
-} from '../interfaces';
-import type { IMerchantSecurityService } from '../interfaces';
+import { IMerchantsService, IMerchantTransactionManager } from '../interfaces';
 import {
   CreateMerchantDto,
   UpdateMerchantDto,
   MerchantResponseDto,
+  CredsResponseDto,
+  UpdateBalanceDto,
+  PasswordResponseDto,
 } from '../dto';
 
 @Injectable()
 export class MerchantsService
-  implements IMerchantsService, IMerchantBalanceManager
+  implements IMerchantsService, IMerchantTransactionManager
 {
   constructor(
     @InjectModel(Merchant.name)
     private merchantModel: Model<Merchant>,
-    @Inject(MERCHANTS_SECURITY_SERVICE)
-    private readonly merchantSecurityService: IMerchantSecurityService,
   ) {}
 
   async create(
     createMerchantDto: CreateMerchantDto,
   ): Promise<MerchantResponseDto> {
-    // Hash password and generate API credentials
-    const hashedPassword = await this.merchantSecurityService.hashPassword(
-      createMerchantDto.password,
-    );
-    const { apiKey, apiSecret } =
-      this.merchantSecurityService.generateApiCredentials();
-
     const newMerchant = new this.merchantModel({
       ...createMerchantDto,
-      password: hashedPassword,
-      apiKey,
-      apiSecret,
-      balance: createMerchantDto.balance || 0,
     });
 
     const saved = await newMerchant.save();
     return this.toResponseDto(saved);
   }
 
-  async findByUserName(userName: string): Promise<MerchantResponseDto> {
+  async findByUserName(userName: string): Promise<PasswordResponseDto> {
     const merchant = await this.merchantModel.findOne({ userName });
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
     }
-    return this.toResponseDto(merchant);
+    return {
+      id: merchant._id.toString(),
+      userName: merchant.userName,
+      password: merchant.password,
+    };
   }
 
-  async findByApiKey(apiKey: string): Promise<MerchantResponseDto> {
+  async findByApiKey(apiKey: string): Promise<CredsResponseDto> {
     const merchant = await this.merchantModel.findOne({ apiKey });
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
     }
-    return this.toResponseDto(merchant);
+    return { apiKey: merchant.apiKey, apiSecret: merchant.apiSecret };
   }
 
-  async validateCredentials(
-    userName: string,
-    password: string,
-  ): Promise<boolean> {
-    const merchant = await this.merchantModel.findOne({ userName });
-    if (!merchant) {
-      return false;
-    }
-
-    return this.merchantSecurityService.comparePassword(
-      password,
-      merchant.password,
-    );
-  }
-
-  async regenerateApiCredentials(id: string): Promise<MerchantResponseDto> {
+  async regenerateApiCredentials(id: string): Promise<CredsResponseDto> {
     const merchant = await this.merchantModel.findById(id);
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
     }
 
-    const { apiKey, apiSecret } =
-      this.merchantSecurityService.generateApiCredentials();
-
+    const apiKey = `pk_${randomBytes(32).toString('base64url')}`;
+    const apiSecret = `sk_${randomBytes(64).toString('base64url')}`;
     const currentVersion = merchant.__v;
 
     const updated = await this.merchantModel.findOneAndUpdate(
@@ -106,24 +79,15 @@ export class MerchantsService
       );
     }
 
-    return this.toResponseDto(updated);
+    return { apiKey: updated.apiKey, apiSecret: updated.apiSecret };
   }
 
   async update(
-    id: string,
     updateMerchantDto: UpdateMerchantDto,
   ): Promise<MerchantResponseDto> {
-    const merchant = await this.merchantModel.findById(id);
+    const merchant = await this.merchantModel.findById(updateMerchantDto.id);
     if (!merchant) {
       throw new NotFoundException('Merchant not found');
-    }
-
-    // Hash password if it's being updated
-    const updateData = { ...updateMerchantDto };
-    if (updateMerchantDto.password) {
-      updateData.password = await this.merchantSecurityService.hashPassword(
-        updateMerchantDto.password,
-      );
     }
 
     // Store current version
@@ -131,8 +95,8 @@ export class MerchantsService
 
     // Update with version check
     const updated = await this.merchantModel.findOneAndUpdate(
-      { _id: id, __v: currentVersion },
-      { ...updateData, $inc: { __v: 1 } },
+      { _id: updateMerchantDto.id, __v: currentVersion },
+      { ...updateMerchantDto, $inc: { __v: 1 } },
       { new: true, runValidators: true },
     );
 
@@ -150,26 +114,25 @@ export class MerchantsService
   }
 
   async updateBalance(
-    id: string,
-    amount: number,
-    maxRetries = 3,
+    updateBalanceDto: UpdateBalanceDto,
   ): Promise<MerchantResponseDto> {
+    const maxRetries = 3;
     let retries = 0;
 
     while (retries < maxRetries) {
       try {
-        const merchant = await this.merchantModel.findById(id);
+        const merchant = await this.merchantModel.findById(updateBalanceDto.id);
         if (!merchant) {
           throw new NotFoundException('Merchant not found');
         }
 
-        const newBalance = merchant.balance + amount;
+        const newBalance = merchant.balance + updateBalanceDto.amount;
         if (newBalance < 0) {
           throw new Error('Insufficient balance');
         }
 
         const updated = await this.merchantModel.findOneAndUpdate(
-          { _id: id, __v: merchant.__v },
+          { _id: updateBalanceDto.id, __v: merchant.__v },
           { balance: newBalance, $inc: { __v: 1 } },
           { new: true },
         );
@@ -193,9 +156,11 @@ export class MerchantsService
 
   private toResponseDto(merchant: Merchant): MerchantResponseDto {
     return {
+      id: merchant._id.toString(),
       userName: merchant.userName,
       balance: merchant.balance,
       apiKey: merchant.apiKey,
+      webhook: merchant.webhook,
     };
   }
 }

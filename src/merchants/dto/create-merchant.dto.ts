@@ -1,10 +1,4 @@
-import {
-  IsString,
-  IsNotEmpty,
-  MinLength,
-  IsNumber,
-  Min,
-} from 'class-validator';
+import { IsString, IsNotEmpty, MinLength } from 'class-validator';
 
 export class CreateMerchantDto {
   @IsString()
@@ -15,8 +9,4 @@ export class CreateMerchantDto {
   @IsNotEmpty()
   @MinLength(8)
   password: string;
-
-  @IsNumber()
-  @Min(0)
-  balance: number;
 }
