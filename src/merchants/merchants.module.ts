@@ -3,9 +3,15 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MerchantsService } from './services';
 import { WithdrawalService } from './services/withdrawal.service';
 import { MerchantsController } from './controllers/merchants.controller';
-import { Merchant, MerchantSchema, Withdrawal, WithdrawalSchema } from './schemas';
+import {
+  Merchant,
+  MerchantSchema,
+  Withdrawal,
+  WithdrawalSchema,
+} from './schemas';
 import { MERCHANTS_SERVICE, MERCHANTS_TRANSACTION_MANAGER } from './interfaces';
 import { TokenizationModule } from 'src/tokenization/tokenization.module';
+import { AuditModule } from 'src/audit/audit.module';
 
 @Module({
   imports: [
@@ -14,6 +20,7 @@ import { TokenizationModule } from 'src/tokenization/tokenization.module';
       { name: Withdrawal.name, schema: WithdrawalSchema },
     ]),
     TokenizationModule,
+    AuditModule,
   ],
   controllers: [MerchantsController],
   providers: [

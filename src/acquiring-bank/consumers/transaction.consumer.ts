@@ -15,7 +15,7 @@ import {
   TransactionStatus,
 } from 'src/transactions/schemas/transaction.schema';
 import { OutboxEventType } from 'src/common/outbox/schemas/outbox.schema';
-import { AuditService } from 'src/audit/services/audit.service';
+import { AuditService } from '../../audit/services/audit.service';
 import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
 
 @Injectable()

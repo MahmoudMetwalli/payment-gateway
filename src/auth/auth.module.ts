@@ -7,6 +7,7 @@ import { JwtService as CustomJwtService } from './services/jwt.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthController } from './controllers/auth.controller';
 import { MerchantsModule } from '../merchants/merchants.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { MerchantsModule } from '../merchants/merchants.module';
     PassportModule,
     JwtModule.register({}), // Configuration done in JwtService
     MerchantsModule,
+    AuditModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, CustomJwtService, JwtStrategy],

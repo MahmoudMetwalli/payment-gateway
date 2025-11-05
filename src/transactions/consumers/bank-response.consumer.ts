@@ -15,7 +15,7 @@ import { OutboxEventType } from 'src/common/outbox/schemas/outbox.schema';
 import { Transaction } from '../schemas/transaction.schema';
 import { MERCHANTS_SERVICE } from 'src/merchants/interfaces';
 import type { IMerchantTransactionManager } from 'src/merchants/interfaces';
-import { AuditService } from 'src/audit/services/audit.service';
+import { AuditService } from '../../audit/services/audit.service';
 import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
 
 @Injectable()

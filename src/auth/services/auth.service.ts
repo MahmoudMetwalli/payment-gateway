@@ -4,7 +4,7 @@ import { MERCHANTS_SERVICE } from 'src/merchants/interfaces';
 import type { IMerchantsService } from 'src/merchants/interfaces';
 import { AuthDto } from '../dto';
 import { JwtService, TokenPair } from './jwt.service';
-import { AuditService } from 'src/audit/services/audit.service';
+import { AuditService } from '../../audit/services/audit.service';
 import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
 
 @Injectable()

@@ -11,6 +11,7 @@ import { DatabaseModule } from 'src/common/database/database.module';
 import { HmacModule } from 'src/common/hmac/hmac.module';
 import { MerchantsModule } from 'src/merchants/merchants.module';
 import { RabbitMQModule } from 'src/common/rabbitmq/rabbitmq.module';
+import { AuditModule } from 'src/audit/audit.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { RabbitMQModule } from 'src/common/rabbitmq/rabbitmq.module';
     HmacModule,
     MerchantsModule,
     RabbitMQModule,
+    AuditModule,
   ],
   controllers: [TransactionController],
   providers: [TransactionService, BankResponseConsumer],

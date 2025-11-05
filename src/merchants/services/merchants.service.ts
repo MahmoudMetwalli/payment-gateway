@@ -21,8 +21,8 @@ import {
   BankingInfoResponseDto,
 } from '../dto/banking-info.dto';
 import { EncryptionService } from 'src/tokenization/services/encryption.service';
-import { AuditService } from 'src/audit/services/audit.service';
-import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
+import { AuditService } from '../../audit/services/audit.service';
+import { UserType, AuditStatus } from '../../audit/schemas/audit-log.schema';
 
 @Injectable()
 export class MerchantsService

@@ -4,7 +4,11 @@ import { AcquiringBankService } from './services/acquiring-bank.service';
 import { TransactionConsumer } from './consumers/transaction.consumer';
 import { RabbitMQModule } from 'src/common/rabbitmq/rabbitmq.module';
 import { InboxModule } from 'src/common/inbox/inbox.module';
-import { Transaction, TransactionSchema } from 'src/transactions/schemas/transaction.schema';
+import { AuditModule } from 'src/audit/audit.module';
+import {
+  Transaction,
+  TransactionSchema,
+} from 'src/transactions/schemas/transaction.schema';
 
 @Module({
   imports: [
@@ -13,9 +17,9 @@ import { Transaction, TransactionSchema } from 'src/transactions/schemas/transac
     ]),
     RabbitMQModule,
     InboxModule,
+    AuditModule,
   ],
   providers: [AcquiringBankService, TransactionConsumer],
   exports: [AcquiringBankService],
 })
 export class AcquiringBankModule {}
-

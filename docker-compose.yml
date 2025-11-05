@@ -6,7 +6,15 @@ services:
     image: mongo:7
     container_name: payment-gateway-mongodb
     restart: unless-stopped
-    # Standalone MongoDB (no replica set). We will disable retryable writes in the URI.
+    # Single-node replica set for transactions support
+    entrypoint:
+      - bash
+      - -c
+      - |
+        cp /tmp/keyfile /data/mongodb-keyfile
+        chmod 400 /data/mongodb-keyfile
+        chown 999:999 /data/mongodb-keyfile
+        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile /data/mongodb-keyfile
     ports:
       - '27017:27017'
     environment:
@@ -16,6 +24,7 @@ services:
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
+      - ./scripts/mongo-keyfile:/tmp/keyfile:ro
     networks:
       - payment-gateway-network
     healthcheck:
@@ -23,6 +32,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # MongoDB Replica Set Initializer
+  mongodb-init:
+    image: mongo:7
+    container_name: payment-gateway-mongodb-init
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - payment-gateway-network
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        mongosh --host mongodb:27017 -u admin -p password123 --authenticationDatabase admin --eval "
+        try {
+          var status = rs.status();
+          print('Replica set already initialized');
+        } catch(e) {
+          print('Initializing replica set...');
+          rs.initiate({
+            _id: 'rs0',
+            members: [{ _id: 0, host: 'mongodb:27017' }]
+          });
+          print('Replica set initialized');
+        }
+        "
+    restart: "no"
 
   # RabbitMQ Message Broker
   rabbitmq:
@@ -53,7 +89,7 @@ services:
     container_name: payment-gateway-seed
     environment:
       # MongoDB
-      MONGODB_URI: mongodb://admin:password123@mongodb:27017/payment-gateway?authSource=admin&retryWrites=false
+      MONGODB_URI: mongodb://admin:password123@mongodb:27017/payment-gateway?authSource=admin&replicaSet=rs0
       
       # Default Admin (for initial seeding)
       DEFAULT_ADMIN_USERNAME: admin
@@ -61,8 +97,8 @@ services:
       DEFAULT_ADMIN_EMAIL: admin@paymentgateway.com
       DEFAULT_ADMIN_ROLE: super_admin
     depends_on:
-      mongodb:
-        condition: service_healthy
+      mongodb-init:
+        condition: service_completed_successfully
     networks:
       - payment-gateway-network
     entrypoint: ["/bin/sh"]
@@ -84,7 +120,7 @@ services:
       PORT: 3000
       
       # MongoDB
-      MONGODB_URI: mongodb://admin:password123@mongodb:27017/payment-gateway?authSource=admin&retryWrites=false
+      MONGODB_URI: mongodb://admin:password123@mongodb:27017/payment-gateway?authSource=admin&replicaSet=rs0
       
       # JWT
       JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
@@ -116,8 +152,8 @@ services:
       THROTTLE_LIMIT: 100
       
     depends_on:
-      mongodb:
-        condition: service_healthy
+      mongodb-init:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       seed:

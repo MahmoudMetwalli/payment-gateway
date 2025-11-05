@@ -8,7 +8,7 @@ import {
 } from 'src/common/rabbitmq/dlx-setup.service';
 import { InboxService } from 'src/common/inbox/services/inbox.service';
 import { WebhookService } from '../services/webhook.service';
-import { AuditService } from 'src/audit/services/audit.service';
+import { AuditService } from '../../audit/services/audit.service';
 import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
 
 @Injectable()
