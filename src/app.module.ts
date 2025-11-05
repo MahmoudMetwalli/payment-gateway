@@ -27,7 +27,7 @@ import { HealthModule } from './health/health.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => [
         {
-          ttl: config.get('THROTTLE_TTL', 60) * 1000, // Convert to milliseconds
+          ttl: config.get('THROTTLE_TTL', 60) * 1000,
           limit: config.get('THROTTLE_LIMIT', 100),
         },
       ],

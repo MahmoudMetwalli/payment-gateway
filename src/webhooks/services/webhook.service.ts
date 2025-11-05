@@ -25,27 +25,28 @@ export class WebhookService {
   ): Promise<void> {
     try {
       // Fetch merchant data to get webhook URLs and apiSecret
-      const merchant = await this.merchantsService.findByUserName(
-        merchantId,
-      ).catch(() => null);
+      const merchant = await this.merchantsService
+        .findById(merchantId)
+        .catch(() => null);
 
       if (!merchant) {
-        this.logger.warn(`Merchant ${merchantId} not found for webhook delivery`);
+        this.logger.warn(
+          `Merchant ${merchantId} not found for webhook delivery`,
+        );
         return;
       }
 
-      // Get merchant's full data to access webhook URLs
-      // In production, you'd fetch the full merchant record with webhooks
-      // For now, we'll use a simplified approach
-      const webhookUrls = await this.getMerchantWebhooks(merchantId);
+      const webhookUrls = merchant.webhook;
 
       if (!webhookUrls || webhookUrls.length === 0) {
-        this.logger.debug(`No webhook URLs configured for merchant ${merchantId}`);
+        this.logger.debug(
+          `No webhook URLs configured for merchant ${merchantId}`,
+        );
         return;
       }
 
       // Get merchant's API secret for signing
-      const creds = await this.merchantsService.findByApiKey(merchantId);
+      const creds = await this.merchantsService.findByApiKey(merchant.apiKey);
 
       // Prepare webhook payload
       const payload = {
@@ -67,8 +68,29 @@ export class WebhookService {
       );
 
       // Deliver to each webhook URL with retry logic
-      for (const url of webhookUrls) {
-        await this.deliverToUrl(url, payloadString, signature, timestamp);
+      const deliveryPromises = webhookUrls.map((url) =>
+        this.deliverToUrl(url, payloadString, signature, timestamp),
+      );
+
+      const results = await Promise.allSettled(deliveryPromises);
+
+      // Log results
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          this.logger.error(
+            `Failed to deliver webhook to ${webhookUrls[index]}: ${result.reason}`,
+          );
+        } else {
+          this.logger.log(
+            `Successfully delivered webhook to ${webhookUrls[index]}`,
+          );
+        }
+      });
+
+      // Check if all failed
+      const allFailed = results.every((r) => r.status === 'rejected');
+      if (allFailed) {
+        throw new Error('All webhook deliveries failed');
       }
     } catch (error) {
       this.logger.error(
@@ -88,7 +110,11 @@ export class WebhookService {
     signature: string,
     timestamp: string,
   ): Promise<void> {
-    const maxRetries = 3;
+    const maxRetries = this.configService.get<number>('WEBHOOK_MAX_RETRIES', 3);
+    const timeoutMs = this.configService.get<number>(
+      'WEBHOOK_TIMEOUT_MS',
+      10000,
+    );
     let attempt = 0;
 
     while (attempt < maxRetries) {
@@ -102,7 +128,7 @@ export class WebhookService {
             'User-Agent': 'PaymentGateway-Webhook/1.0',
           },
           body: payload,
-          signal: AbortSignal.timeout(10000), // 10 second timeout
+          signal: AbortSignal.timeout(timeoutMs),
         });
 
         if (response.ok) {
@@ -134,18 +160,7 @@ export class WebhookService {
     );
   }
 
-  /**
-   * Get webhook URLs for a merchant
-   * In a real implementation, this would fetch from the merchant record
-   */
-  private async getMerchantWebhooks(merchantId: string): Promise<string[]> {
-    // This is a placeholder - in production, fetch from merchant record
-    // For now, return empty array or use environment variable for testing
-    return [];
-  }
-
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
-

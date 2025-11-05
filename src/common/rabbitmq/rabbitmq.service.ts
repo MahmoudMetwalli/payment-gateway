@@ -3,16 +3,22 @@ import { ConfigService } from '@nestjs/config';
 import * as amqp from 'amqp-connection-manager';
 import { ChannelWrapper } from 'amqp-connection-manager';
 import { ConfirmChannel } from 'amqplib';
+import { DLXSetupService, DLQRoutingKey } from './dlx-setup.service';
 
 @Injectable()
 export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
   private connection: amqp.AmqpConnectionManager;
   private channelWrapper: ChannelWrapper;
 
-  constructor(private configService: ConfigService) {}
+  constructor(
+    private configService: ConfigService,
+    private dlxSetup: DLXSetupService,
+  ) {}
 
   async onModuleInit() {
-    const rabbitMQUrl = this.configService.get<string>('RABBITMQ_URL') || 'amqp://guest:guest@localhost:5672';
+    const rabbitMQUrl =
+      this.configService.get<string>('RABBITMQ_URL') ||
+      'amqp://guest:guest@localhost:5672';
 
     this.connection = amqp.connect([rabbitMQUrl], {
       heartbeatIntervalInSeconds: 30,
@@ -29,18 +35,33 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
 
     this.channelWrapper = this.connection.createChannel({
       setup: async (channel: ConfirmChannel) => {
-        // Declare queues
+        // Setup shared DLX first
+        await this.dlxSetup.setupDLX(channel);
+
+        // Declare main queues with DLX configuration
+        const transactionQueue =
+          this.configService.get<string>('RABBITMQ_TRANSACTION_QUEUE') ||
+          'transaction.queue';
+
+        const bankResponseQueue =
+          this.configService.get<string>('RABBITMQ_BANK_RESPONSE_QUEUE') ||
+          'acquiring-bank.response.queue';
+
+        const webhookQueue =
+          this.configService.get<string>('RABBITMQ_WEBHOOK_QUEUE') ||
+          'webhook.queue';
+
         await channel.assertQueue(
-          this.configService.get<string>('RABBITMQ_TRANSACTION_QUEUE') || 'transaction.queue',
-          { durable: true },
+          transactionQueue,
+          this.dlxSetup.getQueueOptions(DLQRoutingKey.TRANSACTION),
         );
         await channel.assertQueue(
-          this.configService.get<string>('RABBITMQ_BANK_RESPONSE_QUEUE') || 'acquiring-bank.response.queue',
-          { durable: true },
+          bankResponseQueue,
+          this.dlxSetup.getQueueOptions(DLQRoutingKey.BANK_RESPONSE),
         );
         await channel.assertQueue(
-          this.configService.get<string>('RABBITMQ_WEBHOOK_QUEUE') || 'webhook.queue',
-          { durable: true },
+          webhookQueue,
+          this.dlxSetup.getQueueOptions(DLQRoutingKey.WEBHOOK),
         );
       },
     });
@@ -74,4 +95,3 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     return this.channelWrapper;
   }
 }
-

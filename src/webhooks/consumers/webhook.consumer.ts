@@ -1,6 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RabbitMQService } from 'src/common/rabbitmq/rabbitmq.service';
+import {
+  DLXSetupService,
+  DLQRoutingKey,
+} from 'src/common/rabbitmq/dlx-setup.service';
 import { WebhookService } from '../services/webhook.service';
 
 @Injectable()
@@ -9,12 +13,15 @@ export class WebhookConsumer implements OnModuleInit {
 
   constructor(
     private rabbitMQService: RabbitMQService,
+    private dlxSetup: DLXSetupService,
     private webhookService: WebhookService,
     private configService: ConfigService,
   ) {}
 
   async onModuleInit() {
-    const queueName = this.configService.get<string>('RABBITMQ_WEBHOOK_QUEUE') || 'webhook.queue';
+    const queueName =
+      this.configService.get<string>('RABBITMQ_WEBHOOK_QUEUE') ||
+      'webhook.queue';
     this.startConsuming(queueName);
   }
 
@@ -22,9 +29,13 @@ export class WebhookConsumer implements OnModuleInit {
     const channelWrapper = this.rabbitMQService.getChannelWrapper();
 
     await channelWrapper.addSetup(async (channel) => {
-      // Assert queue exists before consuming
-      await channel.assertQueue(queueName, { durable: true });
-      
+      // DLX already setup by RabbitMQService
+      // Just assert queue with DLX options
+      await channel.assertQueue(
+        queueName,
+        this.dlxSetup.getQueueOptions(DLQRoutingKey.WEBHOOK),
+      );
+
       await channel.consume(
         queueName,
         async (msg) => {
@@ -55,8 +66,7 @@ export class WebhookConsumer implements OnModuleInit {
       );
     } catch (error) {
       this.logger.error('Failed to deliver webhook:', error);
-      // Webhook failures are logged but don't crash the system
+      throw error; // Re-throw to trigger nack and send to DLQ
     }
   }
 }
-

@@ -3,9 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { RabbitMQService } from 'src/common/rabbitmq/rabbitmq.service';
+import {
+  DLXSetupService,
+  DLQRoutingKey,
+} from 'src/common/rabbitmq/dlx-setup.service';
 import { InboxService } from 'src/common/inbox/services/inbox.service';
 import { AcquiringBankService } from '../services/acquiring-bank.service';
-import { Transaction, TransactionStatus } from 'src/transactions/schemas/transaction.schema';
+import {
+  Transaction,
+  TransactionStatus,
+} from 'src/transactions/schemas/transaction.schema';
 import { OutboxEventType } from 'src/common/outbox/schemas/outbox.schema';
 
 @Injectable()
@@ -14,6 +21,7 @@ export class TransactionConsumer implements OnModuleInit {
 
   constructor(
     private rabbitMQService: RabbitMQService,
+    private dlxSetup: DLXSetupService,
     private inboxService: InboxService,
     private acquiringBankService: AcquiringBankService,
     private configService: ConfigService,
@@ -22,9 +30,9 @@ export class TransactionConsumer implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const queueName = this.configService.get<string>(
-      'RABBITMQ_TRANSACTION_QUEUE',
-    ) || 'transaction.queue';
+    const queueName =
+      this.configService.get<string>('RABBITMQ_TRANSACTION_QUEUE') ||
+      'transaction.queue';
     this.startConsuming(queueName);
   }
 
@@ -32,9 +40,13 @@ export class TransactionConsumer implements OnModuleInit {
     const channelWrapper = this.rabbitMQService.getChannelWrapper();
 
     await channelWrapper.addSetup(async (channel) => {
-      // Assert queue exists before consuming
-      await channel.assertQueue(queueName, { durable: true });
-      
+      // DLX already setup by RabbitMQService
+      // Just assert queue with DLX options
+      await channel.assertQueue(
+        queueName,
+        this.dlxSetup.getQueueOptions(DLQRoutingKey.TRANSACTION),
+      );
+
       await channel.consume(
         queueName,
         async (msg) => {
@@ -61,7 +73,8 @@ export class TransactionConsumer implements OnModuleInit {
             channel.ack(msg);
           } catch (error) {
             this.logger.error('Error processing message:', error);
-            channel.nack(msg, false, false); // Don't requeue
+            // Reject without requeue - goes to DLQ
+            channel.nack(msg, false, false);
           }
         },
         { noAck: false },
@@ -110,9 +123,9 @@ export class TransactionConsumer implements OnModuleInit {
       });
 
       // Publish response to webhook queue
-      const responseQueue = this.configService.get<string>(
-        'RABBITMQ_BANK_RESPONSE_QUEUE',
-      ) || 'acquiring-bank.response.queue';
+      const responseQueue =
+        this.configService.get<string>('RABBITMQ_BANK_RESPONSE_QUEUE') ||
+        'acquiring-bank.response.queue';
       await this.rabbitMQService.publishToQueue(responseQueue, {
         transactionId: content.transactionId,
         merchantId: content.merchantId,
@@ -123,9 +136,7 @@ export class TransactionConsumer implements OnModuleInit {
         amount: content.amount,
       });
 
-      this.logger.log(
-        `Processed purchase ${content.transactionId}: ${status}`,
-      );
+      this.logger.log(`Processed purchase ${content.transactionId}: ${status}`);
     } catch (error) {
       this.logger.error(`Failed to process purchase: ${error.message}`);
       await this.transactionModel.findByIdAndUpdate(content.transactionId, {
@@ -163,9 +174,9 @@ export class TransactionConsumer implements OnModuleInit {
       }
 
       // Publish response
-      const responseQueue = this.configService.get<string>(
-        'RABBITMQ_BANK_RESPONSE_QUEUE',
-      ) || 'acquiring-bank.response.queue';
+      const responseQueue =
+        this.configService.get<string>('RABBITMQ_BANK_RESPONSE_QUEUE') ||
+        'acquiring-bank.response.queue';
       await this.rabbitMQService.publishToQueue(responseQueue, {
         transactionId: content.refundId,
         merchantId: content.merchantId,
@@ -196,9 +207,9 @@ export class TransactionConsumer implements OnModuleInit {
       });
 
       // Publish response
-      const responseQueue = this.configService.get<string>(
-        'RABBITMQ_BANK_RESPONSE_QUEUE',
-      ) || 'acquiring-bank.response.queue';
+      const responseQueue =
+        this.configService.get<string>('RABBITMQ_BANK_RESPONSE_QUEUE') ||
+        'acquiring-bank.response.queue';
       await this.rabbitMQService.publishToQueue(responseQueue, {
         transactionId: content.chargebackId,
         merchantId: content.merchantId,
@@ -216,4 +227,3 @@ export class TransactionConsumer implements OnModuleInit {
     }
   }
 }
-

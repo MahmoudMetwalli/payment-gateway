@@ -16,7 +16,10 @@ import {
   UpdateBalanceDto,
   PasswordResponseDto,
 } from '../dto';
-import { BankingInfoDto, BankingInfoResponseDto } from '../dto/banking-info.dto';
+import {
+  BankingInfoDto,
+  BankingInfoResponseDto,
+} from '../dto/banking-info.dto';
 import { EncryptionService } from 'src/tokenization/services/encryption.service';
 
 @Injectable()
@@ -62,6 +65,14 @@ export class MerchantsService
       apiKey: merchant.apiKey,
       apiSecret: merchant.apiSecret,
     };
+  }
+
+  async findById(id: string): Promise<MerchantResponseDto> {
+    const merchant = await this.merchantModel.findById(id);
+    if (!merchant) {
+      throw new NotFoundException('Merchant not found');
+    }
+    return this.toResponseDto(merchant);
   }
 
   async regenerateApiCredentials(id: string): Promise<CredsResponseDto> {
@@ -206,7 +217,6 @@ export class MerchantsService
       throw new NotFoundException('Banking information not configured');
     }
 
-    // Decrypt for processing (but we'll mask it for display)
     const decryptedAccountNumber = this.encryptionService.decrypt(
       merchant.encryptedBankAccountNumber,
     );
