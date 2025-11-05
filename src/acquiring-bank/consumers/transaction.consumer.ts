@@ -111,18 +111,13 @@ export class TransactionConsumer implements OnModuleInit {
         token: content.token,
       });
 
-      // Update transaction status
+      // Determine transaction status
       const status = result.success
         ? TransactionStatus.AUTHORIZED
         : TransactionStatus.FAILED;
 
-      await this.transactionModel.findByIdAndUpdate(content.transactionId, {
-        status,
-        authorizationCode: result.authorizationCode,
-        failureReason: result.declineReason,
-      });
-
-      // Publish response to webhook queue
+      // Publish response to bank response queue
+      // Transaction status + merchant balance will be updated atomically there
       const responseQueue =
         this.configService.get<string>('RABBITMQ_BANK_RESPONSE_QUEUE') ||
         'acquiring-bank.response.queue';
@@ -139,6 +134,7 @@ export class TransactionConsumer implements OnModuleInit {
       this.logger.log(`Processed purchase ${content.transactionId}: ${status}`);
     } catch (error) {
       this.logger.error(`Failed to process purchase: ${error.message}`);
+      // Set transaction to failed status directly
       await this.transactionModel.findByIdAndUpdate(content.transactionId, {
         status: TransactionStatus.FAILED,
         failureReason: 'Processing error',
@@ -157,13 +153,8 @@ export class TransactionConsumer implements OnModuleInit {
         ? TransactionStatus.REFUNDED
         : TransactionStatus.FAILED;
 
-      await this.transactionModel.findByIdAndUpdate(content.refundId, {
-        status,
-        authorizationCode: result.authorizationCode,
-        failureReason: result.declineReason,
-      });
-
       // Update original transaction's refunded amount if successful
+      // This happens here because it's not related to balance
       if (result.success) {
         await this.transactionModel.findByIdAndUpdate(
           content.originalTransactionId,
@@ -174,6 +165,7 @@ export class TransactionConsumer implements OnModuleInit {
       }
 
       // Publish response
+      // Refund transaction status + merchant balance will be updated atomically there
       const responseQueue =
         this.configService.get<string>('RABBITMQ_BANK_RESPONSE_QUEUE') ||
         'acquiring-bank.response.queue';
@@ -182,6 +174,8 @@ export class TransactionConsumer implements OnModuleInit {
         merchantId: content.merchantId,
         status,
         success: result.success,
+        authorizationCode: result.authorizationCode,
+        failureReason: result.declineReason,
         amount: content.amount,
         isRefund: true,
       });
@@ -201,12 +195,8 @@ export class TransactionConsumer implements OnModuleInit {
 
       const status = TransactionStatus.CHARGEBACK;
 
-      await this.transactionModel.findByIdAndUpdate(content.chargebackId, {
-        status,
-        authorizationCode: result.authorizationCode,
-      });
-
       // Publish response
+      // Chargeback transaction status + merchant balance will be updated atomically there
       const responseQueue =
         this.configService.get<string>('RABBITMQ_BANK_RESPONSE_QUEUE') ||
         'acquiring-bank.response.queue';
@@ -215,6 +205,7 @@ export class TransactionConsumer implements OnModuleInit {
         merchantId: content.merchantId,
         status,
         success: true,
+        authorizationCode: result.authorizationCode,
         amount: content.amount,
         isChargeback: true,
       });

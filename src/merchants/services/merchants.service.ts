@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, ClientSession } from 'mongoose';
 import { Merchant } from '../schemas';
 import { IMerchantsService, IMerchantTransactionManager } from '../interfaces';
 import {
@@ -137,13 +137,16 @@ export class MerchantsService
 
   async updateBalance(
     updateBalanceDto: UpdateBalanceDto,
+    session?: ClientSession,
   ): Promise<MerchantResponseDto> {
     const maxRetries = 3;
     let retries = 0;
 
     while (retries < maxRetries) {
       try {
-        const merchant = await this.merchantModel.findById(updateBalanceDto.id);
+        const merchant = await this.merchantModel
+          .findById(updateBalanceDto.id)
+          .session(session || null);
         if (!merchant) {
           throw new NotFoundException('Merchant not found');
         }
@@ -156,7 +159,7 @@ export class MerchantsService
         const updated = await this.merchantModel.findOneAndUpdate(
           { _id: updateBalanceDto.id, __v: merchant.__v },
           { balance: newBalance, $inc: { __v: 1 } },
-          { new: true },
+          { new: true, session },
         );
 
         if (!updated) {
