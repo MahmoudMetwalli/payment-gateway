@@ -7,7 +7,8 @@ import {
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { AuditService } from '../services/audit.service';
-import { UserType } from '../schemas/audit-log.schema';
+import { UserType, AuditStatus } from '../schemas/audit-log.schema';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -42,29 +43,35 @@ export class AuditInterceptor implements NestInterceptor {
 
   private async logRequest(request: any, response: any, error: any) {
     try {
-      // Extract user info from request
+      // Extract user info from request (PCI DSS 10.2.1)
       let userId = 'anonymous';
+      let userName: string | undefined;
       let userType = UserType.SYSTEM;
 
       // Check for JWT authenticated user (merchant or admin)
       if (request.user) {
         userId = request.user.sub || request.user.id || 'unknown';
-        userType = request.user.type === 'merchant' ? UserType.MERCHANT : UserType.ADMIN;
+        userName = request.user.userName || request.user.username;
+        userType =
+          request.user.type === 'merchant' ? UserType.MERCHANT : UserType.ADMIN;
       }
 
       // Check for HMAC authenticated merchant
       if (request.merchant) {
         userId = request.merchant.id;
+        userName = request.merchant.userName;
         userType = UserType.MERCHANT;
       }
 
-      // Determine action from HTTP method and path
+      // Determine action from HTTP method and path (PCI DSS 10.2.2)
       const action = `${request.method} ${request.route?.path || request.url}`;
+      const method = request.method;
+      const endpoint = request.route?.path || request.url;
 
       // Extract resource from URL
       const resource = this.extractResource(request.url);
 
-      // Get IP address
+      // Get IP address (PCI DSS 10.2.1 & 10.2.5)
       const ipAddress =
         request.ip ||
         request.headers['x-forwarded-for']?.split(',')[0] ||
@@ -73,6 +80,32 @@ export class AuditInterceptor implements NestInterceptor {
 
       // Get user agent
       const userAgent = request.headers['user-agent'] || 'unknown';
+
+      // Determine success or failure (PCI DSS 10.2.4)
+      const statusCode = error ? error.status || 500 : response.statusCode;
+      const status =
+        statusCode >= 200 && statusCode < 400
+          ? AuditStatus.SUCCESS
+          : AuditStatus.FAILURE;
+
+      // Generate request ID for correlation
+      const requestId = randomUUID();
+
+      // Check for sensitive data access (PCI DSS 10.2.6 & 10.2.7)
+      const sensitiveDataAccessed = this.isSensitiveDataAccess(
+        endpoint,
+        request.body,
+      );
+      const cardholderDataAccess = this.isCardholderDataAccess(
+        endpoint,
+        request.body,
+      );
+
+      // Determine what data was accessed
+      const dataAccessed = this.extractDataAccessed(resource, request.body);
+
+      // Extract token IDs if present (never log actual card data)
+      const tokenIds = this.extractTokenIds(request.body, request.params);
 
       // Prepare request details (will be sanitized in service)
       const requestDetails = {
@@ -85,21 +118,102 @@ export class AuditInterceptor implements NestInterceptor {
       };
 
       await this.auditService.logAction({
+        // User identification (PCI DSS 10.2.1)
         userId,
+        userName,
         userType,
+        ipAddress,
+        userAgent,
+
+        // Event details (PCI DSS 10.2.2)
         action,
         resource,
         resourceId: request.params?.id,
-        requestDetails,
-        ipAddress,
-        userAgent,
-        statusCode: error ? error.status || 500 : response.statusCode,
+        method,
+        endpoint,
+
+        // Success/Failure (PCI DSS 10.2.4)
+        status,
+        statusCode,
         errorMessage: error ? error.message : undefined,
+
+        // Origination (PCI DSS 10.2.5)
+        sourceHost: request.hostname,
+
+        // Data access (PCI DSS 10.2.6 & 10.2.7)
+        dataAccessed,
+        sensitiveDataAccessed,
+        cardholderDataAccess,
+        tokenIds,
+
+        // Additional context
+        requestId,
+        sessionId: request.session?.id,
+        requestDetails,
       });
     } catch (logError) {
       // Silently fail - audit logging should not break the application
       console.error('Audit logging failed:', logError);
     }
+  }
+
+  /**
+   * Check if the request involves sensitive data access
+   */
+  private isSensitiveDataAccess(endpoint: string, body: any): boolean {
+    const sensitivePatterns = [
+      'token',
+      'card',
+      'payment',
+      'transaction',
+      'balance',
+      'credential',
+      'secret',
+    ];
+
+    const endpointLower = endpoint.toLowerCase();
+    return sensitivePatterns.some((pattern) => endpointLower.includes(pattern));
+  }
+
+  /**
+   * Check if the request involves cardholder data access
+   */
+  private isCardholderDataAccess(endpoint: string, body: any): boolean {
+    const cardholderPatterns = ['token', 'card', 'decrypt', 'tokenization'];
+
+    const endpointLower = endpoint.toLowerCase();
+    return cardholderPatterns.some((pattern) =>
+      endpointLower.includes(pattern),
+    );
+  }
+
+  /**
+   * Extract what types of data were accessed
+   */
+  private extractDataAccessed(resource: string, body: any): string[] {
+    const accessed: string[] = [resource];
+
+    if (body) {
+      if (body.token) accessed.push('token');
+      if (body.amount || body.balance) accessed.push('financial_data');
+      if (body.cardNumber) accessed.push('card_data');
+      if (body.transactionId) accessed.push('transaction');
+    }
+
+    return [...new Set(accessed)]; // Remove duplicates
+  }
+
+  /**
+   * Extract token IDs (never log actual card data)
+   */
+  private extractTokenIds(body: any, params: any): string[] {
+    const tokenIds: string[] = [];
+
+    if (body?.token) tokenIds.push(body.token);
+    if (body?.tokenId) tokenIds.push(body.tokenId);
+    if (params?.tokenId) tokenIds.push(params.tokenId);
+
+    return tokenIds;
   }
 
   private extractResource(url: string): string {
@@ -129,4 +243,3 @@ export class AuditInterceptor implements NestInterceptor {
     return sanitized;
   }
 }
-

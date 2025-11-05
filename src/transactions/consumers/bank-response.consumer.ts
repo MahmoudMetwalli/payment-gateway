@@ -13,6 +13,8 @@ import { OutboxEventType } from 'src/common/outbox/schemas/outbox.schema';
 import { Transaction } from '../schemas/transaction.schema';
 import { MERCHANTS_SERVICE } from 'src/merchants/interfaces';
 import type { IMerchantTransactionManager } from 'src/merchants/interfaces';
+import { AuditService } from 'src/audit/services/audit.service';
+import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
 
 @Injectable()
 export class BankResponseConsumer implements OnModuleInit {
@@ -24,6 +26,7 @@ export class BankResponseConsumer implements OnModuleInit {
     private unityOfWork: UnityOfWorkService,
     private outboxService: OutboxService,
     private configService: ConfigService,
+    private readonly auditService: AuditService,
     @InjectModel(Transaction.name)
     private transactionModel: Model<Transaction>,
     @Inject(MERCHANTS_SERVICE)
@@ -140,8 +143,60 @@ export class BankResponseConsumer implements OnModuleInit {
           `Created webhook notification for transaction ${content.transactionId}`,
         );
       });
+
+      // PCI DSS - Log bank response processing (internal system operation)
+      await this.auditService.logAction({
+        userId: 'acquiring-bank',
+        userType: UserType.SYSTEM,
+        ipAddress: 'internal',
+        action: 'BANK_RESPONSE_PROCESSED',
+        eventCategory: 'transaction_processing',
+        resource: 'transactions',
+        resourceId: content.transactionId,
+        method: 'INTERNAL',
+        endpoint: 'bank-response.consumer',
+        status: AuditStatus.SUCCESS,
+        statusCode: 200,
+        sensitiveDataAccessed: true,
+        dataAccessed: ['transaction', 'merchant_balance', 'financial_data'],
+        metadata: {
+          transactionId: content.transactionId,
+          merchantId: content.merchantId,
+          status: content.status,
+          success: content.success,
+          amount: content.amount,
+          isRefund: content.isRefund || false,
+          isChargeback: content.isChargeback || false,
+          authorizationCode: content.authorizationCode,
+        },
+      });
     } catch (error) {
       this.logger.error(`Failed to process bank response: ${error.message}`);
+
+      // PCI DSS - Log failed bank response processing
+      await this.auditService.logAction({
+        userId: 'acquiring-bank',
+        userType: UserType.SYSTEM,
+        ipAddress: 'internal',
+        action: 'BANK_RESPONSE_PROCESSED',
+        eventCategory: 'transaction_processing',
+        resource: 'transactions',
+        resourceId: content.transactionId,
+        method: 'INTERNAL',
+        endpoint: 'bank-response.consumer',
+        status: AuditStatus.FAILURE,
+        statusCode: 500,
+        errorMessage: error.message,
+        sensitiveDataAccessed: true,
+        dataAccessed: ['transaction'],
+        metadata: {
+          transactionId: content.transactionId,
+          merchantId: content.merchantId,
+          status: content.status,
+          amount: content.amount,
+        },
+      });
+
       throw error;
     }
   }

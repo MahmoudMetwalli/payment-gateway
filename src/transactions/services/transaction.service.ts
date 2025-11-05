@@ -20,6 +20,8 @@ import {
 import { TokenizationService } from 'src/tokenization/services/tokenization.service';
 import { OutboxService } from 'src/common/outbox/services/outbox.service';
 import { OutboxEventType } from 'src/common/outbox/schemas/outbox.schema';
+import { AuditService } from 'src/audit/services/audit.service';
+import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
 
 @Injectable()
 export class TransactionService {
@@ -28,6 +30,7 @@ export class TransactionService {
     private transactionModel: Model<Transaction>,
     private tokenizationService: TokenizationService,
     private outboxService: OutboxService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -36,62 +39,121 @@ export class TransactionService {
   async createPurchase(
     dto: CreatePurchaseDto,
     merchantId: string,
+    ipAddress?: string,
   ): Promise<TransactionResponseDto> {
-    // Validate that either token or cardData is provided
-    if (!dto.token && !dto.cardData) {
-      throw new BadRequestException('Either token or cardData must be provided');
-    }
+    let transactionId: string | undefined;
 
-    if (dto.token && dto.cardData) {
-      throw new BadRequestException('Provide either token or cardData, not both');
-    }
+    try {
+      // Validate that either token or cardData is provided
+      if (!dto.token && !dto.cardData) {
+        throw new BadRequestException(
+          'Either token or cardData must be provided',
+        );
+      }
 
-    let tokenData;
+      if (dto.token && dto.cardData) {
+        throw new BadRequestException(
+          'Provide either token or cardData, not both',
+        );
+      }
 
-    // Tokenize card if raw data provided
-    if (dto.cardData) {
-      tokenData = await this.tokenizationService.tokenizeCard(
-        dto.cardData,
-        merchantId,
-      );
-    } else {
-      // Get token info if token provided
-      tokenData = await this.tokenizationService.getTokenInfo(
-        dto.token!,
-        merchantId,
-      );
-    }
+      let tokenData;
 
-    // Create transaction
-    const transaction = new this.transactionModel({
-      merchantId: new Types.ObjectId(merchantId),
-      amount: dto.amount,
-      currency: dto.currency || 'USD',
-      status: TransactionStatus.PENDING,
-      type: TransactionType.PURCHASE,
-      tokenizedCardId: tokenData.token,
-      cardLast4: tokenData.cardLast4,
-      cardBrand: tokenData.cardBrand,
-      refundedAmount: 0,
-      metadata: dto.metadata || {},
-    });
+      // Tokenize card if raw data provided
+      if (dto.cardData) {
+        tokenData = await this.tokenizationService.tokenizeCard(
+          dto.cardData,
+          merchantId,
+          ipAddress,
+        );
+      } else {
+        // Get token info if token provided
+        tokenData = await this.tokenizationService.getTokenInfo(
+          dto.token!,
+          merchantId,
+        );
+      }
 
-    const savedTransaction = await transaction.save();
-
-    // Create outbox entry for async processing
-    await this.outboxService.createOutboxEntry({
-      aggregateId: savedTransaction._id.toString(),
-      eventType: OutboxEventType.TRANSACTION_CREATED,
-      payload: {
-        transactionId: savedTransaction._id.toString(),
-        merchantId,
+      // Create transaction
+      const transaction = new this.transactionModel({
+        merchantId: new Types.ObjectId(merchantId),
         amount: dto.amount,
         currency: dto.currency || 'USD',
-        token: tokenData.token,
-      },
-    });
+        status: TransactionStatus.PENDING,
+        type: TransactionType.PURCHASE,
+        tokenizedCardId: tokenData.token,
+        cardLast4: tokenData.cardLast4,
+        cardBrand: tokenData.cardBrand,
+        refundedAmount: 0,
+        metadata: dto.metadata || {},
+      });
 
-    return this.toResponseDto(savedTransaction);
+      const savedTransaction = await transaction.save();
+      transactionId = savedTransaction._id.toString();
+
+      // Create outbox entry for async processing
+      await this.outboxService.createOutboxEntry({
+        aggregateId: transactionId,
+        eventType: OutboxEventType.TRANSACTION_CREATED,
+        payload: {
+          transactionId,
+          merchantId,
+          amount: dto.amount,
+          currency: dto.currency || 'USD',
+          token: tokenData.token,
+        },
+      });
+
+      // PCI DSS - Log transaction creation
+      await this.auditService.logAction({
+        userId: merchantId,
+        userType: UserType.MERCHANT,
+        ipAddress: ipAddress || 'unknown',
+        action: 'TRANSACTION_CREATE',
+        eventCategory: 'transaction_processing',
+        resource: 'transactions',
+        resourceId: transactionId,
+        method: 'POST',
+        endpoint: '/transactions/purchase',
+        status: AuditStatus.SUCCESS,
+        statusCode: 201,
+        sensitiveDataAccessed: true,
+        tokenIds: [tokenData.token],
+        dataAccessed: ['transaction', 'token', 'financial_data'],
+        metadata: {
+          amount: dto.amount,
+          currency: dto.currency || 'USD',
+          type: TransactionType.PURCHASE,
+        },
+      });
+
+      return this.toResponseDto(savedTransaction);
+    } catch (error) {
+      // PCI DSS - Log failed transaction creation
+      await this.auditService.logAction({
+        userId: merchantId,
+        userType: UserType.MERCHANT,
+        ipAddress: ipAddress || 'unknown',
+        action: 'TRANSACTION_CREATE',
+        eventCategory: 'transaction_processing',
+        resource: 'transactions',
+        resourceId: transactionId,
+        method: 'POST',
+        endpoint: '/transactions/purchase',
+        status: AuditStatus.FAILURE,
+        statusCode: 400,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        sensitiveDataAccessed: true,
+        dataAccessed: ['transaction'],
+        metadata: {
+          amount: dto.amount,
+          currency: dto.currency || 'USD',
+          type: TransactionType.PURCHASE,
+        },
+      });
+
+      throw error;
+    }
   }
 
   /**
@@ -119,7 +181,12 @@ export class TransactionService {
   async listTransactions(
     merchantId: string,
     filters: ListTransactionsDto,
-  ): Promise<{ data: TransactionResponseDto[]; total: number; page: number; limit: number }> {
+  ): Promise<{
+    data: TransactionResponseDto[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     const query: any = { merchantId: new Types.ObjectId(merchantId) };
 
     if (filters.status) {
@@ -339,4 +406,3 @@ export class TransactionService {
     };
   }
 }
-

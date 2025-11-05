@@ -23,4 +23,3 @@ import { AuditController } from './controllers/audit.controller';
   exports: [AuditService],
 })
 export class AuditModule {}
-

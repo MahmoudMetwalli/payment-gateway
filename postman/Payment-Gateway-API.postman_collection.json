@@ -1,0 +1,806 @@
+{
+  "info": {
+    "name": "Payment Gateway API",
+    "description": "Complete API documentation for PCI DSS compliant payment gateway with audit logging",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "api_key",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "api_secret",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "merchant_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Merchant Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('jwt_token', response.accessToken);",
+                  "    pm.environment.set('refresh_token', response.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userName\": \"merchant_user\",\n  \"password\": \"SecurePassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login with merchant credentials to get JWT token. Token is automatically saved to environment."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "refresh"]
+            },
+            "description": "Refresh JWT access token using refresh token"
+          },
+          "response": []
+        }
+      ],
+      "description": "Authentication endpoints for merchants"
+    },
+    {
+      "name": "Tokenization",
+      "item": [
+        {
+          "name": "Tokenize Card",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('token_id', response.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"4532015112830366\",\n  \"cvv\": \"123\",\n  \"expiryMonth\": \"12\",\n  \"expiryYear\": \"2025\",\n  \"cardHolderName\": \"John Doe\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/tokenization/tokenize",
+              "host": ["{{base_url}}"],
+              "path": ["tokenization", "tokenize"]
+            },
+            "description": "Tokenize card data. Card number is encrypted and a token is returned. PCI DSS compliant - card data never stored in plain text."
+          },
+          "response": []
+        },
+        {
+          "name": "Detokenize Card",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{token_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/tokenization/detokenize",
+              "host": ["{{base_url}}"],
+              "path": ["tokenization", "detokenize"]
+            },
+            "description": "Decrypt and retrieve original card data from token. Highly sensitive operation - fully audited per PCI DSS 10.2.7"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Token Info",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/tokenization/token/{{token_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["tokenization", "token", "{{token_id}}"]
+            },
+            "description": "Get token metadata without decrypting sensitive data (last 4 digits, expiry, brand)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Card tokenization endpoints for PCI DSS compliance"
+    },
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "Create Purchase with Card Data",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('transaction_id', response.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100.50,\n  \"currency\": \"USD\",\n  \"cardData\": {\n    \"cardNumber\": \"4532015112830366\",\n    \"cvv\": \"123\",\n    \"expiryMonth\": \"12\",\n    \"expiryYear\": \"2025\",\n    \"cardHolderName\": \"John Doe\"\n  },\n  \"metadata\": {\n    \"orderId\": \"ORD-12345\",\n    \"description\": \"Test purchase\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/transactions/purchase",
+              "host": ["{{base_url}}"],
+              "path": ["transactions", "purchase"]
+            },
+            "description": "Create purchase transaction with raw card data. Card will be tokenized automatically. Transaction processed asynchronously by acquiring bank."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Purchase with Token",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100.50,\n  \"currency\": \"USD\",\n  \"token\": \"{{token_id}}\",\n  \"metadata\": {\n    \"orderId\": \"ORD-12346\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/transactions/purchase",
+              "host": ["{{base_url}}"],
+              "path": ["transactions", "purchase"]
+            },
+            "description": "Create purchase using pre-existing token. Faster and more secure than sending card data."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Transaction",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/transactions/{{transaction_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["transactions", "{{transaction_id}}"]
+            },
+            "description": "Get transaction details by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "List Transactions",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/transactions?status=AUTHORIZED&page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["transactions"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "AUTHORIZED",
+                  "description": "Filter by status: PENDING, AUTHORIZED, FAILED, REFUNDED"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "startDate",
+                  "value": "2025-11-01",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "2025-11-30",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List all transactions with optional filters"
+          },
+          "response": []
+        }
+      ],
+      "description": "Transaction processing endpoints"
+    },
+    {
+      "name": "Merchants",
+      "item": [
+        {
+          "name": "Get Merchant Profile",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/merchants/{{merchant_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["merchants", "{{merchant_id}}"]
+            },
+            "description": "Get merchant profile information"
+          },
+          "response": []
+        },
+        {
+          "name": "Regenerate API Credentials",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('api_key', response.apiKey);",
+                  "    pm.environment.set('api_secret', response.apiSecret);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/merchants/{{merchant_id}}/regenerate-credentials",
+              "host": ["{{base_url}}"],
+              "path": ["merchants", "{{merchant_id}}", "regenerate-credentials"]
+            },
+            "description": "Regenerate API key and secret. Old credentials are immediately invalidated. This operation is fully audited (PCI DSS security critical)."
+          },
+          "response": []
+        }
+      ],
+      "description": "Merchant management endpoints"
+    },
+    {
+      "name": "Audit Logs (PCI DSS)",
+      "item": [
+        {
+          "name": "Query Audit Logs",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/logs?userId={{merchant_id}}&startDate=2025-11-01&endDate=2025-11-30&page=1&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "logs"],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "{{merchant_id}}",
+                  "description": "Filter by user ID"
+                },
+                {
+                  "key": "userType",
+                  "value": "merchant",
+                  "description": "Filter by user type: merchant, admin, system",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "TRANSACTION_CREATE",
+                  "description": "Filter by action type",
+                  "disabled": true
+                },
+                {
+                  "key": "resource",
+                  "value": "transactions",
+                  "description": "Filter by resource",
+                  "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": "2025-11-01",
+                  "description": "Start date (ISO format)"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2025-11-30",
+                  "description": "End date (ISO format)"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Query audit logs with flexible filters. Admin only. Supports filtering by user, action, resource, date range."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Audit Log by ID",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/logs/:logId",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "logs", ":logId"],
+              "variable": [
+                {
+                  "key": "logId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Get specific audit log entry by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Cardholder Data Access Logs (10.2.7)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/cardholder-data-access?startDate=2025-11-05T00:00:00Z&endDate=2025-11-05T23:59:59Z&page=1&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "cardholder-data-access"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "2025-11-05T00:00:00Z",
+                  "description": "Start date"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2025-11-05T23:59:59Z",
+                  "description": "End date"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "PCI DSS 10.2.7 - Get all logs where cardholder data was accessed (tokenization, detokenization). Critical for compliance audits."
+          },
+          "response": []
+        },
+        {
+          "name": "Failed Authentication Attempts (10.2.4)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/failed-authentications?startDate=2025-11-05T00:00:00Z&page=1&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "failed-authentications"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "2025-11-05T00:00:00Z"
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "PCI DSS 10.2.4 - Get all failed login attempts for security monitoring. Detect brute force attacks and unauthorized access attempts."
+          },
+          "response": []
+        },
+        {
+          "name": "Critical Security Events",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/critical-events?startDate=2025-11-05T00:00:00Z&endDate=2025-11-05T23:59:59Z&page=1&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "critical-events"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "2025-11-05T00:00:00Z"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2025-11-05T23:59:59Z"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Get all critical severity events (cardholder data access, admin operations, credential changes). Required for daily security review."
+          },
+          "response": []
+        },
+        {
+          "name": "User Audit Trail (10.2.1)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/user/{{merchant_id}}?startDate=2025-11-01&endDate=2025-11-30&page=1&limit=100",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "user", "{{merchant_id}}"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "2025-11-01"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2025-11-30"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "PCI DSS 10.2.1 - Get complete audit trail for a specific user. Shows all actions performed by user in chronological order."
+          },
+          "response": []
+        },
+        {
+          "name": "Transaction Audit Trail",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/transaction/{{transaction_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "transaction", "{{transaction_id}}"],
+              "variable": [
+                {
+                  "key": "transaction_id",
+                  "value": "{{transaction_id}}"
+                }
+              ]
+            },
+            "description": "Get complete lifecycle audit trail for a transaction: creation, tokenization, bank processing, balance updates, webhook delivery. Perfect for dispute resolution."
+          },
+          "response": []
+        },
+        {
+          "name": "Daily Audit Summary",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/summary/daily?date=2025-11-05",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "summary", "daily"],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "2025-11-05",
+                  "description": "Date in YYYY-MM-DD format. Defaults to today if not provided."
+                }
+              ]
+            },
+            "description": "Get comprehensive daily audit summary with statistics: total events, failed auth, cardholder data access, critical events, top users, top actions. Required for PCI DSS daily log review."
+          },
+          "response": []
+        }
+      ],
+      "description": "PCI DSS compliant audit log endpoints for compliance monitoring and security review"
+    },
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Check API health status"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

@@ -9,6 +9,8 @@ import { randomBytes } from 'crypto';
 import { TokenVault } from '../schemas/token-vault.schema';
 import { EncryptionService } from './encryption.service';
 import { CardDto, TokenDto, DecryptedCardDto } from '../dto';
+import { AuditService } from 'src/audit/services/audit.service';
+import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
 
 @Injectable()
 export class TokenizationService {
@@ -16,6 +18,7 @@ export class TokenizationService {
     @InjectModel(TokenVault.name)
     private tokenVaultModel: Model<TokenVault>,
     private encryptionService: EncryptionService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -24,52 +27,99 @@ export class TokenizationService {
   async tokenizeCard(
     cardData: CardDto,
     merchantId: string,
+    ipAddress?: string,
   ): Promise<TokenDto> {
-    // Validate card number using Luhn algorithm
-    if (!this.validateLuhn(cardData.cardNumber)) {
-      throw new BadRequestException('Invalid card number');
-    }
+    let success = false;
+    let token: string | undefined;
 
-    // Validate expiry date
-    this.validateExpiryDate(cardData.expiryMonth, cardData.expiryYear);
+    try {
+      // Validate card number using Luhn algorithm
+      if (!this.validateLuhn(cardData.cardNumber)) {
+        throw new BadRequestException('Invalid card number');
+      }
 
-    // Detect card brand
-    const cardBrand = this.detectCardBrand(cardData.cardNumber);
+      // Validate expiry date
+      this.validateExpiryDate(cardData.expiryMonth, cardData.expiryYear);
 
-    // Encrypt card data
-    const encryptedCardData = this.encryptionService.encrypt(
-      JSON.stringify({
-        cardNumber: cardData.cardNumber,
-        cvv: cardData.cvv,
+      // Detect card brand
+      const cardBrand = this.detectCardBrand(cardData.cardNumber);
+
+      // Encrypt card data
+      const encryptedCardData = this.encryptionService.encrypt(
+        JSON.stringify({
+          cardNumber: cardData.cardNumber,
+          cvv: cardData.cvv,
+          expiryMonth: cardData.expiryMonth,
+          expiryYear: cardData.expiryYear,
+          cardHolderName: cardData.cardHolderName,
+        }),
+      );
+
+      // Generate unique token
+      token = `tok_${randomBytes(32).toString('base64url')}`;
+
+      // Store in vault
+      const vaultEntry = new this.tokenVaultModel({
+        token,
+        encryptedCardData,
+        cardLast4: cardData.cardNumber.slice(-4),
+        cardBrand,
         expiryMonth: cardData.expiryMonth,
         expiryYear: cardData.expiryYear,
-        cardHolderName: cardData.cardHolderName,
-      }),
-    );
+        merchantId: new Types.ObjectId(merchantId),
+      });
 
-    // Generate unique token
-    const token = `tok_${randomBytes(32).toString('base64url')}`;
+      await vaultEntry.save();
 
-    // Store in vault
-    const vaultEntry = new this.tokenVaultModel({
-      token,
-      encryptedCardData,
-      cardLast4: cardData.cardNumber.slice(-4),
-      cardBrand,
-      expiryMonth: cardData.expiryMonth,
-      expiryYear: cardData.expiryYear,
-      merchantId: new Types.ObjectId(merchantId),
-    });
+      success = true;
 
-    await vaultEntry.save();
+      // PCI DSS 10.2.7 - Log cardholder data access (tokenization)
+      await this.auditService.logAction({
+        userId: merchantId,
+        userType: UserType.MERCHANT,
+        ipAddress: ipAddress || 'unknown',
+        action: 'CARDHOLDER_DATA_TOKENIZE',
+        eventCategory: 'cardholder_data_access',
+        resource: 'tokenization',
+        method: 'POST',
+        endpoint: '/tokenization/tokenize',
+        status: AuditStatus.SUCCESS,
+        statusCode: 201,
+        cardholderDataAccess: true,
+        sensitiveDataAccessed: true,
+        tokenIds: [token],
+        dataAccessed: ['card_data', 'token'],
+      });
 
-    return {
-      token,
-      cardLast4: cardData.cardNumber.slice(-4),
-      cardBrand,
-      expiryMonth: cardData.expiryMonth,
-      expiryYear: cardData.expiryYear,
-    };
+      return {
+        token,
+        cardLast4: cardData.cardNumber.slice(-4),
+        cardBrand,
+        expiryMonth: cardData.expiryMonth,
+        expiryYear: cardData.expiryYear,
+      };
+    } catch (error) {
+      // PCI DSS 10.2.7 - Log failed cardholder data access
+      await this.auditService.logAction({
+        userId: merchantId,
+        userType: UserType.MERCHANT,
+        ipAddress: ipAddress || 'unknown',
+        action: 'CARDHOLDER_DATA_TOKENIZE',
+        eventCategory: 'cardholder_data_access',
+        resource: 'tokenization',
+        method: 'POST',
+        endpoint: '/tokenization/tokenize',
+        status: AuditStatus.FAILURE,
+        statusCode: 400,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        cardholderDataAccess: true,
+        sensitiveDataAccessed: true,
+        tokenIds: token ? [token] : [],
+        dataAccessed: ['card_data'],
+      });
+
+      throw error;
+    }
   }
 
   /**
@@ -79,29 +129,71 @@ export class TokenizationService {
   async detokenize(
     token: string,
     merchantId: string,
+    ipAddress?: string,
   ): Promise<DecryptedCardDto> {
-    const vaultEntry = await this.tokenVaultModel.findOne({
-      token,
-      merchantId: new Types.ObjectId(merchantId),
-    });
+    try {
+      const vaultEntry = await this.tokenVaultModel.findOne({
+        token,
+        merchantId: new Types.ObjectId(merchantId),
+      });
 
-    if (!vaultEntry) {
-      throw new NotFoundException('Token not found or unauthorized');
+      if (!vaultEntry) {
+        throw new NotFoundException('Token not found or unauthorized');
+      }
+
+      // Decrypt card data
+      const decryptedData = this.encryptionService.decrypt(
+        vaultEntry.encryptedCardData,
+      );
+      const cardData = JSON.parse(decryptedData);
+
+      // PCI DSS 10.2.7 - Log cardholder data access (detokenization)
+      await this.auditService.logAction({
+        userId: merchantId,
+        userType: UserType.MERCHANT,
+        ipAddress: ipAddress || 'unknown',
+        action: 'CARDHOLDER_DATA_DETOKENIZE',
+        eventCategory: 'cardholder_data_access',
+        resource: 'tokenization',
+        method: 'POST',
+        endpoint: '/tokenization/detokenize',
+        status: AuditStatus.SUCCESS,
+        statusCode: 200,
+        cardholderDataAccess: true,
+        sensitiveDataAccessed: true,
+        tokenIds: [token],
+        dataAccessed: ['token', 'card_data'],
+      });
+
+      return {
+        cardNumber: cardData.cardNumber,
+        cvv: cardData.cvv,
+        expiryMonth: cardData.expiryMonth,
+        expiryYear: cardData.expiryYear,
+        cardHolderName: cardData.cardHolderName,
+      };
+    } catch (error) {
+      // PCI DSS 10.2.7 - Log failed cardholder data access
+      await this.auditService.logAction({
+        userId: merchantId,
+        userType: UserType.MERCHANT,
+        ipAddress: ipAddress || 'unknown',
+        action: 'CARDHOLDER_DATA_DETOKENIZE',
+        eventCategory: 'cardholder_data_access',
+        resource: 'tokenization',
+        method: 'POST',
+        endpoint: '/tokenization/detokenize',
+        status: AuditStatus.FAILURE,
+        statusCode: error instanceof NotFoundException ? 404 : 500,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        cardholderDataAccess: true,
+        sensitiveDataAccessed: true,
+        tokenIds: [token],
+        dataAccessed: ['token'],
+      });
+
+      throw error;
     }
-
-    // Decrypt card data
-    const decryptedData = this.encryptionService.decrypt(
-      vaultEntry.encryptedCardData,
-    );
-    const cardData = JSON.parse(decryptedData);
-
-    return {
-      cardNumber: cardData.cardNumber,
-      cvv: cardData.cvv,
-      expiryMonth: cardData.expiryMonth,
-      expiryYear: cardData.expiryYear,
-      cardHolderName: cardData.cardHolderName,
-    };
   }
 
   /**
@@ -186,4 +278,3 @@ export class TokenizationService {
     }
   }
 }
-

@@ -14,6 +14,8 @@ import {
   TransactionStatus,
 } from 'src/transactions/schemas/transaction.schema';
 import { OutboxEventType } from 'src/common/outbox/schemas/outbox.schema';
+import { AuditService } from 'src/audit/services/audit.service';
+import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
 
 @Injectable()
 export class TransactionConsumer implements OnModuleInit {
@@ -25,6 +27,7 @@ export class TransactionConsumer implements OnModuleInit {
     private inboxService: InboxService,
     private acquiringBankService: AcquiringBankService,
     private configService: ConfigService,
+    private readonly auditService: AuditService,
     @InjectModel(Transaction.name)
     private transactionModel: Model<Transaction>,
   ) {}
@@ -132,13 +135,64 @@ export class TransactionConsumer implements OnModuleInit {
       });
 
       this.logger.log(`Processed purchase ${content.transactionId}: ${status}`);
+
+      // PCI DSS - Log acquiring bank transaction processing
+      await this.auditService.logAction({
+        userId: 'acquiring-bank',
+        userType: UserType.SYSTEM,
+        ipAddress: 'internal',
+        action: 'BANK_TRANSACTION_PROCESSED',
+        eventCategory: 'transaction_processing',
+        resource: 'transactions',
+        resourceId: content.transactionId,
+        method: 'INTERNAL',
+        endpoint: 'transaction.consumer',
+        status: result.success ? AuditStatus.SUCCESS : AuditStatus.FAILURE,
+        statusCode: result.success ? 200 : 400,
+        errorMessage: result.declineReason,
+        sensitiveDataAccessed: true,
+        tokenIds: [content.token],
+        dataAccessed: ['transaction', 'token', 'financial_data'],
+        metadata: {
+          transactionId: content.transactionId,
+          merchantId: content.merchantId,
+          amount: content.amount,
+          currency: content.currency,
+          authorizationCode: result.authorizationCode,
+          bankStatus: status,
+        },
+      });
     } catch (error) {
       this.logger.error(`Failed to process purchase: ${error.message}`);
-      // Set transaction to failed status directly
-      await this.transactionModel.findByIdAndUpdate(content.transactionId, {
-        status: TransactionStatus.FAILED,
-        failureReason: 'Processing error',
+
+      // PCI DSS - Log failed bank transaction processing
+      await this.auditService.logAction({
+        userId: 'acquiring-bank',
+        userType: UserType.SYSTEM,
+        ipAddress: 'internal',
+        action: 'BANK_TRANSACTION_PROCESSED',
+        eventCategory: 'transaction_processing',
+        resource: 'transactions',
+        resourceId: content.transactionId,
+        method: 'INTERNAL',
+        endpoint: 'transaction.consumer',
+        status: AuditStatus.FAILURE,
+        statusCode: 500,
+        errorMessage: error.message,
+        sensitiveDataAccessed: true,
+        tokenIds: [content.token],
+        dataAccessed: ['transaction', 'token'],
+        metadata: {
+          transactionId: content.transactionId,
+          merchantId: content.merchantId,
+          amount: content.amount,
+          currency: content.currency,
+        },
       });
+
+      // Don't update transaction status - let it go to DLQ for investigation
+      // The bank might have processed it successfully
+      throw error;
     }
   }
 
@@ -183,6 +237,9 @@ export class TransactionConsumer implements OnModuleInit {
       this.logger.log(`Processed refund ${content.refundId}: ${status}`);
     } catch (error) {
       this.logger.error(`Failed to process refund: ${error.message}`);
+      // Don't update transaction status - let it go to DLQ for investigation
+      // The bank might have processed it successfully
+      throw error;
     }
   }
 
@@ -215,6 +272,9 @@ export class TransactionConsumer implements OnModuleInit {
       );
     } catch (error) {
       this.logger.error(`Failed to process chargeback: ${error.message}`);
+      // Don't update transaction status - let it go to DLQ for investigation
+      // The bank might have processed it successfully
+      throw error;
     }
   }
 }

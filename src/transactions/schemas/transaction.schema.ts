@@ -79,4 +79,3 @@ export const TransactionSchema = SchemaFactory.createForClass(Transaction);
 TransactionSchema.index({ merchantId: 1, createdAt: -1 });
 TransactionSchema.index({ merchantId: 1, status: 1 });
 TransactionSchema.index({ status: 1, createdAt: -1 });
-

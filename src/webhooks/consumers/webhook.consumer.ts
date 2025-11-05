@@ -6,6 +6,8 @@ import {
   DLQRoutingKey,
 } from 'src/common/rabbitmq/dlx-setup.service';
 import { WebhookService } from '../services/webhook.service';
+import { AuditService } from 'src/audit/services/audit.service';
+import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
 
 @Injectable()
 export class WebhookConsumer implements OnModuleInit {
@@ -16,6 +18,7 @@ export class WebhookConsumer implements OnModuleInit {
     private dlxSetup: DLXSetupService,
     private webhookService: WebhookService,
     private configService: ConfigService,
+    private readonly auditService: AuditService,
   ) {}
 
   async onModuleInit() {
@@ -64,8 +67,57 @@ export class WebhookConsumer implements OnModuleInit {
       this.logger.log(
         `Processed webhook for merchant ${content.merchantId}, transaction ${content.transactionId}`,
       );
+
+      // PCI DSS - Log webhook delivery (sensitive data transmission)
+      await this.auditService.logAction({
+        userId: 'webhook-service',
+        userType: UserType.SYSTEM,
+        ipAddress: 'internal',
+        action: 'WEBHOOK_DELIVERED',
+        eventCategory: 'data_transmission',
+        resource: 'webhooks',
+        resourceId: content.transactionId,
+        method: 'INTERNAL',
+        endpoint: 'webhook.consumer',
+        status: AuditStatus.SUCCESS,
+        statusCode: 200,
+        sensitiveDataAccessed: true,
+        dataAccessed: ['transaction', 'financial_data'],
+        metadata: {
+          merchantId: content.merchantId,
+          transactionId: content.transactionId,
+          transactionStatus: content.status,
+          amount: content.amount,
+          isRefund: content.isRefund,
+          isChargeback: content.isChargeback,
+        },
+      });
     } catch (error) {
       this.logger.error('Failed to deliver webhook:', error);
+
+      // PCI DSS - Log failed webhook delivery
+      await this.auditService.logAction({
+        userId: 'webhook-service',
+        userType: UserType.SYSTEM,
+        ipAddress: 'internal',
+        action: 'WEBHOOK_DELIVERED',
+        eventCategory: 'data_transmission',
+        resource: 'webhooks',
+        resourceId: content.transactionId,
+        method: 'INTERNAL',
+        endpoint: 'webhook.consumer',
+        status: AuditStatus.FAILURE,
+        statusCode: 500,
+        errorMessage: error.message,
+        sensitiveDataAccessed: true,
+        dataAccessed: ['transaction'],
+        metadata: {
+          merchantId: content.merchantId,
+          transactionId: content.transactionId,
+          transactionStatus: content.status,
+        },
+      });
+
       throw error; // Re-throw to trigger nack and send to DLQ
     }
   }

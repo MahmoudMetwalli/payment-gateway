@@ -63,7 +63,12 @@ export class TransactionController {
   async listTransactions(
     @Query() filters: ListTransactionsDto,
     @CurrentMerchant() merchant: { id: string },
-  ): Promise<{ data: TransactionResponseDto[]; total: number; page: number; limit: number }> {
+  ): Promise<{
+    data: TransactionResponseDto[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     return this.transactionService.listTransactions(merchant.id, filters);
   }
 
@@ -142,4 +147,3 @@ export class TransactionController {
     );
   }
 }
-

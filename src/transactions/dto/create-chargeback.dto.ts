@@ -18,4 +18,3 @@ export class CreateChargebackDto {
   @IsOptional()
   disputeId?: string;
 }
-

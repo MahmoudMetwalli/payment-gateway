@@ -21,6 +21,8 @@ import {
   BankingInfoResponseDto,
 } from '../dto/banking-info.dto';
 import { EncryptionService } from 'src/tokenization/services/encryption.service';
+import { AuditService } from 'src/audit/services/audit.service';
+import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
 
 @Injectable()
 export class MerchantsService
@@ -30,6 +32,7 @@ export class MerchantsService
     @InjectModel(Merchant.name)
     private merchantModel: Model<Merchant>,
     private encryptionService: EncryptionService,
+    private readonly auditService: AuditService,
   ) {}
 
   async create(
@@ -75,33 +78,82 @@ export class MerchantsService
     return this.toResponseDto(merchant);
   }
 
-  async regenerateApiCredentials(id: string): Promise<CredsResponseDto> {
-    const merchant = await this.merchantModel.findById(id);
-    if (!merchant) {
-      throw new NotFoundException('Merchant not found');
-    }
+  async regenerateApiCredentials(
+    id: string,
+    ipAddress?: string,
+  ): Promise<CredsResponseDto> {
+    try {
+      const merchant = await this.merchantModel.findById(id);
+      if (!merchant) {
+        throw new NotFoundException('Merchant not found');
+      }
 
-    const apiKey = `pk_${randomBytes(32).toString('base64url')}`;
-    const apiSecret = `sk_${randomBytes(64).toString('base64url')}`;
-    const currentVersion = merchant.__v;
+      const apiKey = `pk_${randomBytes(32).toString('base64url')}`;
+      const apiSecret = `sk_${randomBytes(64).toString('base64url')}`;
+      const currentVersion = merchant.__v;
 
-    const updated = await this.merchantModel.findOneAndUpdate(
-      { _id: id, __v: currentVersion },
-      { apiKey, apiSecret, $inc: { __v: 1 } },
-      { new: true, runValidators: true },
-    );
-
-    if (!updated) {
-      throw new ConflictException(
-        'Update conflict - merchant was modified by another request',
+      const updated = await this.merchantModel.findOneAndUpdate(
+        { _id: id, __v: currentVersion },
+        { apiKey, apiSecret, $inc: { __v: 1 } },
+        { new: true, runValidators: true },
       );
-    }
 
-    return {
-      id: updated._id.toString(),
-      apiKey: updated.apiKey,
-      apiSecret: updated.apiSecret,
-    };
+      if (!updated) {
+        throw new ConflictException(
+          'Update conflict - merchant was modified by another request',
+        );
+      }
+
+      // PCI DSS - Log credential regeneration (security critical)
+      await this.auditService.logAction({
+        userId: id,
+        userName: merchant.userName,
+        userType: UserType.MERCHANT,
+        ipAddress: ipAddress || 'unknown',
+        action: 'CREDENTIAL_REGENERATE',
+        eventCategory: 'system_administration',
+        resource: 'credentials',
+        resourceId: id,
+        method: 'POST',
+        endpoint: '/merchants/regenerate-credentials',
+        status: AuditStatus.SUCCESS,
+        statusCode: 200,
+        sensitiveDataAccessed: true,
+        metadata: {
+          credentialType: 'api_credentials',
+          operation: 'regenerate',
+        },
+      });
+
+      return {
+        id: updated._id.toString(),
+        apiKey: updated.apiKey,
+        apiSecret: updated.apiSecret,
+      };
+    } catch (error) {
+      // PCI DSS - Log failed credential regeneration
+      await this.auditService.logAction({
+        userId: id,
+        userType: UserType.MERCHANT,
+        ipAddress: ipAddress || 'unknown',
+        action: 'CREDENTIAL_REGENERATE',
+        eventCategory: 'system_administration',
+        resource: 'credentials',
+        resourceId: id,
+        method: 'POST',
+        endpoint: '/merchants/regenerate-credentials',
+        status: AuditStatus.FAILURE,
+        statusCode: error instanceof NotFoundException ? 404 : 500,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        sensitiveDataAccessed: true,
+        metadata: {
+          credentialType: 'api_credentials',
+          operation: 'regenerate',
+        },
+      });
+
+      throw error;
+    }
   }
 
   async update(
@@ -138,9 +190,12 @@ export class MerchantsService
   async updateBalance(
     updateBalanceDto: UpdateBalanceDto,
     session?: ClientSession,
+    ipAddress?: string,
   ): Promise<MerchantResponseDto> {
     const maxRetries = 3;
     let retries = 0;
+    let oldBalance: number | undefined;
+    let newBalance: number | undefined;
 
     while (retries < maxRetries) {
       try {
@@ -151,7 +206,9 @@ export class MerchantsService
           throw new NotFoundException('Merchant not found');
         }
 
-        const newBalance = merchant.balance + updateBalanceDto.amount;
+        oldBalance = merchant.balance;
+        newBalance = merchant.balance + updateBalanceDto.amount;
+
         if (newBalance < 0) {
           throw new Error('Insufficient balance');
         }
@@ -167,9 +224,62 @@ export class MerchantsService
           continue;
         }
 
+        // PCI DSS - Log balance change (financial data modification)
+        await this.auditService.logAction({
+          userId: updateBalanceDto.id,
+          userName: merchant.userName,
+          userType: UserType.SYSTEM,
+          ipAddress: ipAddress || 'system',
+          action: 'BALANCE_UPDATE',
+          eventCategory: 'data_modification',
+          resource: 'merchants',
+          resourceId: updateBalanceDto.id,
+          method: 'PATCH',
+          endpoint: '/merchants/balance',
+          status: AuditStatus.SUCCESS,
+          statusCode: 200,
+          sensitiveDataAccessed: true,
+          dataAccessed: ['merchant_balance', 'financial_data'],
+          changes: {
+            before: { balance: oldBalance },
+            after: { balance: newBalance },
+          },
+          metadata: {
+            amount: updateBalanceDto.amount,
+            reason: 'transaction',
+          },
+        });
+
         return this.toResponseDto(updated);
       } catch (error) {
-        if (retries >= maxRetries - 1) throw error;
+        if (retries >= maxRetries - 1) {
+          // PCI DSS - Log failed balance change
+          await this.auditService.logAction({
+            userId: updateBalanceDto.id,
+            userType: UserType.SYSTEM,
+            ipAddress: ipAddress || 'system',
+            action: 'BALANCE_UPDATE',
+            eventCategory: 'data_modification',
+            resource: 'merchants',
+            resourceId: updateBalanceDto.id,
+            method: 'PATCH',
+            endpoint: '/merchants/balance',
+            status: AuditStatus.FAILURE,
+            statusCode: error instanceof NotFoundException ? 404 : 500,
+            errorMessage:
+              error instanceof Error ? error.message : 'Unknown error',
+            sensitiveDataAccessed: true,
+            dataAccessed: ['merchant_balance'],
+            metadata: {
+              amount: updateBalanceDto.amount,
+              reason: 'transaction',
+              oldBalance,
+              attemptedNewBalance: newBalance,
+            },
+          });
+
+          throw error;
+        }
         retries++;
       }
     }
