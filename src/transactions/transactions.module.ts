@@ -6,6 +6,7 @@ import { TransactionController } from './controllers/transaction.controller';
 import { BankResponseConsumer } from './consumers/bank-response.consumer';
 import { TokenizationModule } from 'src/tokenization/tokenization.module';
 import { OutboxModule } from 'src/common/outbox/outbox.module';
+import { InboxModule } from 'src/common/inbox/inbox.module';
 import { DatabaseModule } from 'src/common/database/database.module';
 import { HmacModule } from 'src/common/hmac/hmac.module';
 import { MerchantsModule } from 'src/merchants/merchants.module';
@@ -18,6 +19,7 @@ import { RabbitMQModule } from 'src/common/rabbitmq/rabbitmq.module';
     ]),
     TokenizationModule,
     OutboxModule,
+    InboxModule,
     DatabaseModule,
     HmacModule,
     MerchantsModule,
@@ -28,4 +30,3 @@ import { RabbitMQModule } from 'src/common/rabbitmq/rabbitmq.module';
   exports: [TransactionService],
 })
 export class TransactionsModule {}
-

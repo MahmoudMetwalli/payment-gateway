@@ -1,10 +1,12 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ConfirmChannel } from 'amqplib';
 import { RabbitMQService } from 'src/common/rabbitmq/rabbitmq.service';
 import {
   DLXSetupService,
   DLQRoutingKey,
 } from 'src/common/rabbitmq/dlx-setup.service';
+import { InboxService } from 'src/common/inbox/services/inbox.service';
 import { WebhookService } from '../services/webhook.service';
 import { AuditService } from 'src/audit/services/audit.service';
 import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
@@ -16,6 +18,7 @@ export class WebhookConsumer implements OnModuleInit {
   constructor(
     private rabbitMQService: RabbitMQService,
     private dlxSetup: DLXSetupService,
+    private inboxService: InboxService,
     private webhookService: WebhookService,
     private configService: ConfigService,
     private readonly auditService: AuditService,
@@ -31,7 +34,7 @@ export class WebhookConsumer implements OnModuleInit {
   private async startConsuming(queueName: string): Promise<void> {
     const channelWrapper = this.rabbitMQService.getChannelWrapper();
 
-    await channelWrapper.addSetup(async (channel) => {
+    await channelWrapper.addSetup(async (channel: ConfirmChannel) => {
       // DLX already setup by RabbitMQService
       // Just assert queue with DLX options
       await channel.assertQueue(
@@ -46,7 +49,22 @@ export class WebhookConsumer implements OnModuleInit {
 
           try {
             const content = JSON.parse(msg.content.toString());
+            const messageId = msg.properties.messageId || content.transactionId;
+
+            // Check idempotency using inbox
+            if (await this.inboxService.isProcessed(messageId)) {
+              this.logger.debug(`Message ${messageId} already processed`);
+              channel.ack(msg);
+              return;
+            }
+
             await this.processWebhook(content);
+            await this.inboxService.markAsProcessed(
+              messageId,
+              'WEBHOOK_NOTIFICATION',
+              content,
+            );
+
             channel.ack(msg);
           } catch (error) {
             this.logger.error('Error processing webhook:', error);

@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { ConfirmChannel } from 'amqplib';
 import { RabbitMQService } from 'src/common/rabbitmq/rabbitmq.service';
 import {
   DLXSetupService,
@@ -9,6 +10,7 @@ import {
 } from 'src/common/rabbitmq/dlx-setup.service';
 import { UnityOfWorkService } from 'src/common/database/unity-of-work.service';
 import { OutboxService } from 'src/common/outbox/services/outbox.service';
+import { InboxService } from 'src/common/inbox/services/inbox.service';
 import { OutboxEventType } from 'src/common/outbox/schemas/outbox.schema';
 import { Transaction } from '../schemas/transaction.schema';
 import { MERCHANTS_SERVICE } from 'src/merchants/interfaces';
@@ -25,6 +27,7 @@ export class BankResponseConsumer implements OnModuleInit {
     private dlxSetup: DLXSetupService,
     private unityOfWork: UnityOfWorkService,
     private outboxService: OutboxService,
+    private inboxService: InboxService,
     private configService: ConfigService,
     private readonly auditService: AuditService,
     @InjectModel(Transaction.name)
@@ -43,7 +46,7 @@ export class BankResponseConsumer implements OnModuleInit {
   private async startConsuming(queueName: string): Promise<void> {
     const channelWrapper = this.rabbitMQService.getChannelWrapper();
 
-    await channelWrapper.addSetup(async (channel) => {
+    await channelWrapper.addSetup(async (channel: ConfirmChannel) => {
       // DLX already setup by RabbitMQService
       // Just assert queue with DLX options
       await channel.assertQueue(
@@ -58,7 +61,22 @@ export class BankResponseConsumer implements OnModuleInit {
 
           try {
             const content = JSON.parse(msg.content.toString());
+            const messageId = msg.properties.messageId || content.transactionId;
+
+            // Check idempotency using inbox
+            if (await this.inboxService.isProcessed(messageId)) {
+              this.logger.debug(`Message ${messageId} already processed`);
+              channel.ack(msg);
+              return;
+            }
+
             await this.processResponse(content);
+            await this.inboxService.markAsProcessed(
+              messageId,
+              'BANK_RESPONSE',
+              content,
+            );
+
             channel.ack(msg);
           } catch (error) {
             this.logger.error('Error processing bank response:', error);

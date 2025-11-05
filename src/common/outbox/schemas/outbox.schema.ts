@@ -56,4 +56,6 @@ export const OutboxSchema = SchemaFactory.createForClass(Outbox);
 // Index for efficient polling
 OutboxSchema.index({ status: 1, createdAt: 1 });
 OutboxSchema.index({ aggregateId: 1 });
-
+// Index for retry logic and cleanup
+OutboxSchema.index({ status: 1, retryCount: 1 });
+OutboxSchema.index({ status: 1, processedAt: 1 });

@@ -83,4 +83,78 @@ export class OutboxService {
       { status: OutboxStatus.PENDING },
     );
   }
+
+  /**
+   * Delete completed entries older than the specified date
+   */
+  async deleteCompletedBefore(
+    cutoffDate: Date,
+  ): Promise<{ deletedCount: number }> {
+    const result = await this.outboxModel.deleteMany({
+      status: OutboxStatus.COMPLETED,
+      processedAt: { $lt: cutoffDate },
+    });
+
+    return { deletedCount: result.deletedCount || 0 };
+  }
+
+  /**
+   * Get permanently failed entries (exceeded max retries)
+   */
+  async getPermanentlyFailedEntries(maxRetries: number = 3): Promise<Outbox[]> {
+    return this.outboxModel
+      .find({
+        status: OutboxStatus.FAILED,
+        retryCount: { $gte: maxRetries },
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  /**
+   * Get outbox statistics
+   */
+  async getStatistics(): Promise<{
+    pending: number;
+    processing: number;
+    completed: number;
+    failed: number;
+    permanentlyFailed: number;
+  }> {
+    const maxRetries = 3;
+
+    const [pending, processing, completed, failed, permanentlyFailed] =
+      await Promise.all([
+        this.outboxModel.countDocuments({ status: OutboxStatus.PENDING }),
+        this.outboxModel.countDocuments({ status: OutboxStatus.PROCESSING }),
+        this.outboxModel.countDocuments({ status: OutboxStatus.COMPLETED }),
+        this.outboxModel.countDocuments({
+          status: OutboxStatus.FAILED,
+          retryCount: { $lt: maxRetries },
+        }),
+        this.outboxModel.countDocuments({
+          status: OutboxStatus.FAILED,
+          retryCount: { $gte: maxRetries },
+        }),
+      ]);
+
+    return {
+      pending,
+      processing,
+      completed,
+      failed,
+      permanentlyFailed,
+    };
+  }
+
+  /**
+   * Manually reset a permanently failed entry (bypasses max retry limit)
+   */
+  async resetFailedEntry(id: string): Promise<void> {
+    await this.outboxModel.findByIdAndUpdate(id, {
+      status: OutboxStatus.PENDING,
+      retryCount: 0,
+      errorMessage: null,
+    });
+  }
 }

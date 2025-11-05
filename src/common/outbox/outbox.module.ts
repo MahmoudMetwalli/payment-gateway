@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Outbox, OutboxSchema } from './schemas/outbox.schema';
 import { OutboxService } from './services/outbox.service';
 import { OutboxRelayService } from './services/outbox-relay.service';
+import { OutboxController } from './controllers/outbox.controller';
 import { RabbitMQModule } from '../rabbitmq/rabbitmq.module';
 
 @Module({
@@ -10,8 +11,8 @@ import { RabbitMQModule } from '../rabbitmq/rabbitmq.module';
     MongooseModule.forFeature([{ name: Outbox.name, schema: OutboxSchema }]),
     RabbitMQModule,
   ],
+  controllers: [OutboxController],
   providers: [OutboxService, OutboxRelayService],
   exports: [OutboxService],
 })
 export class OutboxModule {}
-

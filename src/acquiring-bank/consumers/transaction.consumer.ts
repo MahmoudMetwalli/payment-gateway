@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { ConfirmChannel } from 'amqplib';
 import { RabbitMQService } from 'src/common/rabbitmq/rabbitmq.service';
 import {
   DLXSetupService,
@@ -42,7 +43,7 @@ export class TransactionConsumer implements OnModuleInit {
   private async startConsuming(queueName: string): Promise<void> {
     const channelWrapper = this.rabbitMQService.getChannelWrapper();
 
-    await channelWrapper.addSetup(async (channel) => {
+    await channelWrapper.addSetup(async (channel: ConfirmChannel) => {
       // DLX already setup by RabbitMQService
       // Just assert queue with DLX options
       await channel.assertQueue(
