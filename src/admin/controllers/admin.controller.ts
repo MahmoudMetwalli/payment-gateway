@@ -10,7 +10,13 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiBody,
+} from '@nestjs/swagger';
 import { AdminService } from '../services/admin.service';
 import { CreateAdminDto } from '../dto/create-admin.dto';
 import { UpdateAdminDto } from '../dto/update-admin.dto';
@@ -41,6 +47,15 @@ export class AdminController {
   @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Admin login' })
+  @ApiBody({
+    type: AdminLoginDto,
+    examples: {
+      default: {
+        summary: 'Example',
+        value: { username: 'admin', password: 'admin123' },
+      },
+    },
+  })
   @ApiResponse({ status: 200, description: 'Login successful' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@Body() loginDto: AdminLoginDto) {
@@ -52,8 +67,14 @@ export class AdminController {
   @Roles(AdminRole.SUPER_ADMIN)
   @ApiBearerAuth('Admin-JWT-auth')
   @ApiOperation({ summary: 'Create admin user (Super Admin only)' })
-  @ApiResponse({ status: 201, description: 'Admin created', type: AdminResponseDto })
-  async createAdmin(@Body() createAdminDto: CreateAdminDto): Promise<AdminResponseDto> {
+  @ApiResponse({
+    status: 201,
+    description: 'Admin created',
+    type: AdminResponseDto,
+  })
+  async createAdmin(
+    @Body() createAdminDto: CreateAdminDto,
+  ): Promise<AdminResponseDto> {
     return this.adminService.create(createAdminDto);
   }
 
@@ -62,7 +83,11 @@ export class AdminController {
   @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiBearerAuth('Admin-JWT-auth')
   @ApiOperation({ summary: 'List all admins' })
-  @ApiResponse({ status: 200, description: 'List of admins', type: [AdminResponseDto] })
+  @ApiResponse({
+    status: 200,
+    description: 'List of admins',
+    type: [AdminResponseDto],
+  })
   async listAdmins(): Promise<AdminResponseDto[]> {
     return this.adminService.findAll();
   }
@@ -72,7 +97,11 @@ export class AdminController {
   @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiBearerAuth('Admin-JWT-auth')
   @ApiOperation({ summary: 'Get admin by ID' })
-  @ApiResponse({ status: 200, description: 'Admin details', type: AdminResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Admin details',
+    type: AdminResponseDto,
+  })
   async getAdmin(@Param('id') id: string): Promise<AdminResponseDto> {
     return this.adminService.findById(id);
   }
@@ -82,7 +111,11 @@ export class AdminController {
   @Roles(AdminRole.SUPER_ADMIN)
   @ApiBearerAuth('Admin-JWT-auth')
   @ApiOperation({ summary: 'Update admin (Super Admin only)' })
-  @ApiResponse({ status: 200, description: 'Admin updated', type: AdminResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Admin updated',
+    type: AdminResponseDto,
+  })
   async updateAdmin(
     @Param('id') id: string,
     @Body() updateAdminDto: UpdateAdminDto,
@@ -118,7 +151,11 @@ export class AdminController {
   @ApiOperation({ summary: 'List all transactions across all merchants' })
   @ApiResponse({ status: 200, description: 'List of transactions' })
   async listTransactions() {
-    return this.transactionModel.find().sort({ createdAt: -1 }).limit(100).exec();
+    return this.transactionModel
+      .find()
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .exec();
   }
 
   @Get('dashboard/stats')
@@ -128,19 +165,20 @@ export class AdminController {
   @ApiOperation({ summary: 'Get system statistics' })
   @ApiResponse({ status: 200, description: 'System statistics' })
   async getDashboardStats() {
-    const [merchantCount, transactionCount, transactionStats] = await Promise.all([
-      this.merchantModel.countDocuments(),
-      this.transactionModel.countDocuments(),
-      this.transactionModel.aggregate([
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 },
-            totalAmount: { $sum: '$amount' },
+    const [merchantCount, transactionCount, transactionStats] =
+      await Promise.all([
+        this.merchantModel.countDocuments(),
+        this.transactionModel.countDocuments(),
+        this.transactionModel.aggregate([
+          {
+            $group: {
+              _id: '$status',
+              count: { $sum: 1 },
+              totalAmount: { $sum: '$amount' },
+            },
           },
-        },
-      ]),
-    ]);
+        ]),
+      ]);
 
     return {
       merchantCount,
@@ -149,4 +187,3 @@ export class AdminController {
     };
   }
 }
-
