@@ -26,7 +26,7 @@ export class AuditLog {
   _id: Types.ObjectId;
 
   // PCI DSS 10.2.1 - User Identification
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   userId: string;
 
   @Prop({ type: String })
@@ -42,7 +42,7 @@ export class AuditLog {
   userAgent: string;
 
   // PCI DSS 10.2.2 - Type of Event
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   action: string;
 
   @Prop({ type: String })
@@ -61,7 +61,7 @@ export class AuditLog {
   endpoint: string;
 
   // PCI DSS 10.2.3 - Date and Time
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   timestamp: Date;
 
   // PCI DSS 10.2.4 - Success or Failure
@@ -139,8 +139,4 @@ AuditLogSchema.index({ cardholderDataAccess: 1, timestamp: -1 });
 AuditLogSchema.index({ sensitiveDataAccessed: 1, timestamp: -1 });
 AuditLogSchema.index({ timestamp: -1 }); // For daily log reviews
 AuditLogSchema.index({ retentionUntil: 1 }); // For automated cleanup
-
-// Compound indexes for common queries
-AuditLogSchema.index({ userId: 1, timestamp: -1 });
-AuditLogSchema.index({ action: 1, timestamp: -1 });
 AuditLogSchema.index({ resource: 1, timestamp: -1 });

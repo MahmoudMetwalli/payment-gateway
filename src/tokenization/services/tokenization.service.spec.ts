@@ -1,23 +1,36 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { BadRequestException } from '@nestjs/common';
+import { Types } from 'mongoose';
 import { TokenizationService } from './tokenization.service';
 import { EncryptionService } from './encryption.service';
+import { AuditService } from '../../audit/services/audit.service';
 import { TokenVault } from '../schemas/token-vault.schema';
 import { CardDto } from '../dto';
 
 describe('TokenizationService', () => {
   let service: TokenizationService;
   let encryptionService: EncryptionService;
+  const validMerchantId = new Types.ObjectId().toString();
 
-  const mockTokenVaultModel = {
-    save: jest.fn(),
-    findOne: jest.fn(),
-  };
+  const mockTokenVaultModel = jest.fn().mockImplementation((data) => ({
+    ...data,
+    save: jest.fn().mockResolvedValue({
+      token: 'tok_abc123',
+      cardLast4: '0366',
+      cardBrand: 'Visa',
+      expiryMonth: data.expiryMonth,
+      expiryYear: data.expiryYear,
+    }),
+  }));
 
   const mockEncryptionService = {
     encrypt: jest.fn(),
     decrypt: jest.fn(),
+  };
+
+  const mockAuditService = {
+    logAction: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -31,6 +44,10 @@ describe('TokenizationService', () => {
         {
           provide: EncryptionService,
           useValue: mockEncryptionService,
+        },
+        {
+          provide: AuditService,
+          useValue: mockAuditService,
         },
       ],
     }).compile();
@@ -54,13 +71,8 @@ describe('TokenizationService', () => {
       };
 
       mockEncryptionService.encrypt.mockReturnValue('encrypted_data');
-      const mockSave = jest.fn().mockResolvedValue({
-        token: 'tok_abc123',
-        cardLast4: '0366',
-        cardBrand: 'Visa',
-      });
 
-      const result = await service.tokenizeCard(cardData, 'merchant123');
+      const result = await service.tokenizeCard(cardData, validMerchantId);
 
       expect(result).toHaveProperty('token');
       expect(result).toHaveProperty('cardLast4', '0366');
@@ -77,7 +89,7 @@ describe('TokenizationService', () => {
       };
 
       await expect(
-        service.tokenizeCard(invalidCard, 'merchant123'),
+        service.tokenizeCard(invalidCard, validMerchantId),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -91,7 +103,7 @@ describe('TokenizationService', () => {
       };
 
       await expect(
-        service.tokenizeCard(expiredCard, 'merchant123'),
+        service.tokenizeCard(expiredCard, validMerchantId),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -112,4 +124,3 @@ describe('TokenizationService', () => {
     });
   });
 });
-

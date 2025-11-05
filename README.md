@@ -198,6 +198,14 @@ NODE_ENV=development
 MONGODB_URI=mongodb://localhost:27017/payment-gateway
 
 # JWT
+# Application
+PORT=3000
+NODE_ENV=development
+
+# MongoDB
+MONGODB_URI=mongodb://localhost:27017/payment-gateway
+
+# JWT
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-this-in-production
 JWT_EXPIRATION=15m
@@ -206,8 +214,10 @@ JWT_REFRESH_EXPIRATION=7d
 # Admin JWT
 ADMIN_JWT_SECRET=your-admin-jwt-secret-change-this-in-production
 
-# Encryption (MUST be exactly 32 characters)
-ENCRYPTION_KEY=your-32-byte-encryption-key-!!
+# Encryption
+ENCRYPTION_KEY=your-32-byte-encryption-key-change-this-must-be-32-bytes!!
+ENCRYPTION_ALGORITHM=aes-256-gcm
+ENCRYPTION_IV_LENGTH=16
 
 # HMAC
 HMAC_TIMESTAMP_TOLERANCE=300
@@ -225,6 +235,10 @@ OUTBOX_BATCH_SIZE=50
 # Rate Limiting
 THROTTLE_TTL=60
 THROTTLE_LIMIT=100
+
+# Webhook
+WEBHOOK_MAX_RETRIES=3
+WEBHOOK_TIMEOUT_MS=10000
 
 # Default Admin (for initial seeding)
 DEFAULT_ADMIN_USERNAME=admin
@@ -543,17 +557,3 @@ src/
 ├── transactions/       # Transaction processing
 └── webhooks/          # Webhook delivery
 ```
-
-## Support
-
-For questions or issues:
-- GitHub Issues: <repository-url>/issues
-- Documentation: http://localhost:3000/api
-
-## License
-
-[Your License Here]
-
----
-
-**Built with ❤️ using NestJS**

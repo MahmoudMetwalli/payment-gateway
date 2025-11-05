@@ -9,8 +9,8 @@ import { randomBytes } from 'crypto';
 import { TokenVault } from '../schemas/token-vault.schema';
 import { EncryptionService } from './encryption.service';
 import { CardDto, TokenDto, DecryptedCardDto } from '../dto';
-import { AuditService } from 'src/audit/services/audit.service';
-import { UserType, AuditStatus } from 'src/audit/schemas/audit-log.schema';
+import { AuditService } from '../../audit/services/audit.service';
+import { UserType, AuditStatus } from '../../audit/schemas/audit-log.schema';
 
 @Injectable()
 export class TokenizationService {
