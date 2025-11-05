@@ -13,6 +13,7 @@ export interface IMerchantsService {
   findByUserName(userName: string): Promise<PasswordResponseDto>;
   findByApiKey(apiKey: string): Promise<CredsResponseDto>;
   findById(id: string): Promise<MerchantResponseDto>;
+  getBalance(id: string): Promise<number>;
   regenerateApiCredentials(id: string): Promise<CredsResponseDto>;
   update(updateMerchantDto: UpdateMerchantDto): Promise<MerchantResponseDto>;
   delete(id: string): Promise<void>;

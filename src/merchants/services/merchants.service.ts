@@ -78,6 +78,14 @@ export class MerchantsService
     return this.toResponseDto(merchant);
   }
 
+  async getBalance(id: string): Promise<number> {
+    const merchant = await this.merchantModel.findById(id).select('balance');
+    if (!merchant) {
+      throw new NotFoundException('Merchant not found');
+    }
+    return merchant.balance;
+  }
+
   async regenerateApiCredentials(
     id: string,
     ipAddress?: string,
