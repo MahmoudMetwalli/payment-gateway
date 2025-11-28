@@ -25,15 +25,25 @@ export class EncryptionService {
     // Determine key length based on algorithm
     this.keyLength = this.getKeyLength(this.algorithm);
 
-    // Get encryption key
+    // Get encryption key (base64-encoded)
     const key = this.configService.get<string>('ENCRYPTION_KEY');
-    if (!key || key.length !== this.keyLength) {
-      this.logger.error(`ENCRYPTION_KEY ${key} is not valid`);
+    if (!key) {
+      this.logger.error('ENCRYPTION_KEY is not configured');
+      throw new Error('ENCRYPTION_KEY is required');
+    }
+
+    // Decode the base64 key
+    this.encryptionKey = Buffer.from(key, 'base64');
+
+    // Validate decoded key length matches algorithm requirements
+    if (this.encryptionKey.length !== this.keyLength) {
+      this.logger.error(
+        `ENCRYPTION_KEY decoded length is ${this.encryptionKey.length} bytes, expected ${this.keyLength} bytes`,
+      );
       throw new Error(
-        `ENCRYPTION_KEY must be exactly ${this.keyLength} characters for ${this.algorithm}`,
+        `ENCRYPTION_KEY must decode to exactly ${this.keyLength} bytes (${this.keyLength * 8} bits) for ${this.algorithm}`,
       );
     }
-    this.encryptionKey = Buffer.from(key, 'utf-8');
 
     // Get IV length (default: 16 bytes for GCM)
     this.ivLength = this.configService.get<number>('ENCRYPTION_IV_LENGTH', 16);
