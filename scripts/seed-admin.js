@@ -3,20 +3,25 @@ const bcrypt = require('bcrypt');
 
 const DEFAULT_ADMIN_USERNAME = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
 const DEFAULT_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123';
-const DEFAULT_ADMIN_EMAIL = process.env.DEFAULT_ADMIN_EMAIL || 'admin@paymentgateway.com';
+const DEFAULT_ADMIN_EMAIL =
+  process.env.DEFAULT_ADMIN_EMAIL || 'admin@paymentgateway.com';
 const DEFAULT_ADMIN_ROLE = process.env.DEFAULT_ADMIN_ROLE || 'super_admin';
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/payment-gateway';
+const MONGODB_URI =
+  process.env.MONGODB_URI || 'mongodb://localhost:27017/payment-gateway';
 
 const saltRounds = 10;
 
 // Admin schema
-const adminSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  role: { type: String, enum: ['super_admin', 'admin'], required: true },
-  isActive: { type: Boolean, default: true },
-}, { timestamps: true });
+const adminSchema = new mongoose.Schema(
+  {
+    username: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    role: { type: String, enum: ['super_admin', 'admin'], required: true },
+    isActive: { type: Boolean, default: true },
+  },
+  { timestamps: true },
+);
 
 const AdminModel = mongoose.model('Admin', adminSchema);
 
@@ -34,18 +39,21 @@ async function seedAdmin() {
     } catch (error) {
       retries--;
       if (retries === 0) {
-        console.error('❌ Failed to connect to MongoDB after 10 retries:', error);
+        console.error(
+          '❌ Failed to connect to MongoDB after 10 retries:',
+          error,
+        );
         process.exit(1);
       }
       console.log('MongoDB not ready, retrying in 2 seconds...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
   }
 
   try {
     // Check if any admin exists
     const adminCount = await AdminModel.countDocuments();
-    
+
     if (adminCount > 0) {
       console.log('Admin accounts already exist, skipping seed');
       await mongoose.disconnect();
@@ -53,7 +61,10 @@ async function seedAdmin() {
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, saltRounds);
+    const hashedPassword = await bcrypt.hash(
+      DEFAULT_ADMIN_PASSWORD,
+      saltRounds,
+    );
 
     // Create default admin
     const admin = new AdminModel({
@@ -66,7 +77,9 @@ async function seedAdmin() {
 
     await admin.save();
 
-    console.log(`✅ Default admin account created successfully: ${DEFAULT_ADMIN_USERNAME}`);
+    console.log(
+      `✅ Default admin account created successfully: ${DEFAULT_ADMIN_USERNAME}`,
+    );
     console.log(`⚠️  Default admin credentials:`);
     console.log(`   Username: ${DEFAULT_ADMIN_USERNAME}`);
     console.log(`   Password: ${DEFAULT_ADMIN_PASSWORD}`);
@@ -84,4 +97,3 @@ async function seedAdmin() {
 }
 
 seedAdmin();
-

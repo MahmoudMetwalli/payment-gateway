@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 
@@ -8,6 +12,8 @@ export class EncryptionService {
   private readonly encryptionKey: Buffer;
   private readonly ivLength: number;
   private readonly keyLength: number;
+
+  private readonly logger = new Logger(EncryptionService.name);
 
   constructor(private configService: ConfigService) {
     // Get algorithm (default: aes-256-gcm)
@@ -22,6 +28,7 @@ export class EncryptionService {
     // Get encryption key
     const key = this.configService.get<string>('ENCRYPTION_KEY');
     if (!key || key.length !== this.keyLength) {
+      this.logger.error(`ENCRYPTION_KEY ${key} is not valid`);
       throw new Error(
         `ENCRYPTION_KEY must be exactly ${this.keyLength} characters for ${this.algorithm}`,
       );

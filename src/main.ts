@@ -9,26 +9,28 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const logger = new Logger('Bootstrap');
-  
+
   // Request logging middleware
   app.use((req, res, next) => {
     const start = Date.now();
     const { method, url, ip } = req;
-    
+
     res.on('finish', () => {
       const duration = Date.now() - start;
       const statusCode = res.statusCode;
       logger.log(`${method} ${url} ${statusCode} ${duration}ms - ${ip}`);
     });
-    
+
     next();
   });
-  
+  app.useLogger(logger);
+
   // Enable static file serving for Swagger custom scripts
   // In production, __dirname points to dist/, so public should be at root level
-  const publicPath = process.env.NODE_ENV === 'production' 
-    ? join(__dirname, '..', 'public')
-    : join(process.cwd(), 'public');
+  const publicPath =
+    process.env.NODE_ENV === 'production'
+      ? join(__dirname, '..', 'public')
+      : join(process.cwd(), 'public');
   app.useStaticAssets(publicPath, {
     prefix: '/',
   });
@@ -103,7 +105,7 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  
+
   // Custom Swagger UI setup with HMAC helper
   SwaggerModule.setup('api', app, document, {
     customJs: '/hmac-helper.js',
@@ -136,7 +138,11 @@ async function bootstrap() {
   });
 
   await app.listen(process.env.PORT ?? 3000);
-  console.log(`Application is running on: http://localhost:${process.env.PORT ?? 3000}`);
-  console.log(`Swagger documentation available at: http://localhost:${process.env.PORT ?? 3000}/api`);
+  console.log(
+    `Application is running on: http://localhost:${process.env.PORT ?? 3000}`,
+  );
+  console.log(
+    `Swagger documentation available at: http://localhost:${process.env.PORT ?? 3000}/api`,
+  );
 }
 bootstrap();
