@@ -297,6 +297,75 @@ export class MerchantsService
     );
   }
 
+  async updateWebhook(
+    id: string,
+    webhook: string[],
+    ipAddress?: string,
+  ): Promise<MerchantResponseDto> {
+    try {
+      const merchant = await this.merchantModel.findById(id);
+      if (!merchant) {
+        throw new NotFoundException('Merchant not found');
+      }
+
+      // Store current version
+      const currentVersion = merchant.__v;
+
+      // Update with version check
+      const updated = await this.merchantModel.findOneAndUpdate(
+        { _id: id, __v: currentVersion },
+        { webhook, $inc: { __v: 1 } },
+        { new: true, runValidators: true },
+      );
+
+      if (!updated) {
+        throw new ConflictException(
+          'Update conflict - merchant was modified by another request',
+        );
+      }
+
+      // PCI DSS - Log webhook update
+      await this.auditService.logAction({
+        userId: id,
+        userName: merchant.userName,
+        userType: UserType.MERCHANT,
+        ipAddress: ipAddress || 'unknown',
+        action: 'WEBHOOK_UPDATE',
+        eventCategory: 'system_administration',
+        resource: 'merchants',
+        resourceId: id,
+        method: 'PATCH',
+        endpoint: '/merchants/webhook',
+        status: AuditStatus.SUCCESS,
+        statusCode: 200,
+        sensitiveDataAccessed: false,
+        changes: {
+          before: { webhook: merchant.webhook },
+          after: { webhook },
+        },
+      });
+
+      return this.toResponseDto(updated);
+    } catch (error) {
+      await this.auditService.logAction({
+        userId: id,
+        userType: UserType.MERCHANT,
+        ipAddress: ipAddress || 'unknown',
+        action: 'WEBHOOK_UPDATE',
+        eventCategory: 'system_administration',
+        resource: 'merchants',
+        resourceId: id,
+        method: 'PATCH',
+        endpoint: '/merchants/webhook',
+        status: AuditStatus.FAILURE,
+        statusCode: error instanceof NotFoundException ? 404 : 500,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        sensitiveDataAccessed: false,
+      });
+      throw error;
+    }
+  }
+
   /**
    * Add or update banking information
    */

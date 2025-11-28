@@ -7,3 +7,4 @@ export * from './password-response.dto';
 export * from './banking-info.dto';
 export * from './create-withdrawal.dto';
 export * from './balance-response.dto';
+export * from './update-webhook.dto';

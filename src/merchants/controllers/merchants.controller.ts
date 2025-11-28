@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  UseGuards,
+  Ip,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -20,6 +29,8 @@ import {
 } from '../dto/create-withdrawal.dto';
 import { CredsResponseDto } from '../dto/creds-response.dto';
 import { BalanceResponseDto } from '../dto/balance-response.dto';
+import { UpdateWebhookDto } from '../dto/update-webhook.dto';
+import { MerchantResponseDto } from '../dto/merchant-response.dto';
 
 @ApiTags('Merchants')
 @Controller('merchants')
@@ -114,6 +125,25 @@ export class MerchantsController {
     @CurrentUser('sub') userId: string,
   ): Promise<WithdrawalResponseDto> {
     return this.withdrawalService.getWithdrawal(id, userId);
+  }
+
+  @Patch('webhook')
+  @ApiOperation({ summary: 'Update merchant webhook URLs' })
+  @ApiResponse({
+    status: 200,
+    description: 'Webhook URLs updated',
+    type: MerchantResponseDto,
+  })
+  async updateWebhook(
+    @CurrentUser('sub') userId: string,
+    @Body() updateWebhookDto: UpdateWebhookDto,
+    @Ip() ip: string,
+  ): Promise<MerchantResponseDto> {
+    return this.merchantsService.updateWebhook(
+      userId,
+      updateWebhookDto.webhook,
+      ip,
+    );
   }
 
   @Post('credentials/regenerate')
